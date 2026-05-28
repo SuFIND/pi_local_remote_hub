@@ -21,7 +21,16 @@ export class PiRemoteAdapter {
 	}
 
 	getState(): RemoteStateSnapshot {
-		return createStateSnapshot(this.latestContext);
+		return createStateSnapshot(this.latestContext, { thinkingLevel: this.readThinkingLevel() });
+	}
+
+	private readThinkingLevel(): string | undefined {
+		const api = this.pi as ExtensionAPI & { getThinkingLevel?: () => string };
+		try {
+			return api.getThinkingLevel?.();
+		} catch {
+			return undefined;
+		}
 	}
 
 	getHistory(limit?: number): RemoteSessionHistory {
