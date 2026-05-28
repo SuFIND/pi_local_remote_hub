@@ -65,7 +65,7 @@ Server sends `server.hello`:
     },
     "capabilities": {
       "authMethods": ["pairingCode", "deviceToken"],
-      "commands": ["session.getState", "session.prompt", "session.abort", "session.compact"],
+      "commands": ["session.getState", "session.history", "session.prompt", "session.abort", "session.compact", "session.listModels", "session.setModel", "session.setThinkingLevel"],
       "features": {
         "sequenceNumbers": true,
         "stableOkEnvelope": true,
@@ -168,6 +168,26 @@ All authenticated request/response commands that use `response.ok` have the same
 ```
 
 `result` is command-specific. Clients should first decode the common `response.ok` payload, then switch on `command`.
+
+## Session state shape
+
+The `state` object carried by `state.snapshot`, `state.changed`, `auth.*.success`, and `session.getState` is best-effort and may grow; clients should treat every field as optional except `isIdle`:
+
+```json
+{
+  "isIdle": true,
+  "cwd": "/Users/me/project",
+  "sessionName": "my session",
+  "sessionFile": "/…/session.jsonl",
+  "entryCount": 42,
+  "leafId": "…",
+  "model": { "provider": "anthropic", "id": "claude-opus-4-8", "name": "Claude Opus 4.8" },
+  "thinkingLevel": "high",
+  "contextUsage": { "tokens": 45000, "contextWindow": 1000000, "percent": 4.5 }
+}
+```
+
+`thinkingLevel` is read from `pi.getThinkingLevel()`; `model` from `ctx.model`; `contextUsage` is forwarded from `ctx.getContextUsage()` and clients should parse it defensively.
 
 ## Authenticated commands
 
@@ -299,6 +319,43 @@ Success emits `state.changed` with `reason: "abortRequested"` after `response.ok
 ```
 
 Success emits `state.changed` with `reason: "compactRequested"` after `response.ok`.
+
+### `session.listModels`
+
+Lists the models Pi knows about, flagged by whether the running session has the credentials to use each one. Query only — no `state.changed`.
+
+```json
+{ "id": "models_1", "type": "session.listModels", "protocolVersion": 1, "payload": {} }
+```
+
+Response `result`:
+
+```json
+{
+  "models": [
+    { "provider": "anthropic", "id": "claude-opus-4-8", "name": "Claude Opus 4.8", "available": true, "reasoning": true, "contextWindow": 1000000 }
+  ],
+  "current": { "provider": "anthropic", "id": "claude-opus-4-8" }
+}
+```
+
+`available` is `false` for models whose provider has no configured API key — clients should show them disabled. Sourced from `ctx.modelRegistry.getAll()` / `.getAvailable()`.
+
+### `session.setModel`
+
+```json
+{ "id": "setmodel_1", "type": "session.setModel", "protocolVersion": 1, "payload": { "provider": "anthropic", "id": "claude-opus-4-8" } }
+```
+
+Resolves the model via `ctx.modelRegistry.find(provider, id)` and calls `pi.setModel`. Fails with `COMMAND_FAILED` if the model is unknown or the provider has no API key. Success emits `state.changed` with `reason: "modelChanged"` after `response.ok`; the new model is in the attached `state.model`.
+
+### `session.setThinkingLevel`
+
+```json
+{ "id": "think_1", "type": "session.setThinkingLevel", "protocolVersion": 1, "payload": { "level": "high" } }
+```
+
+`level` must be one of `minimal`, `low`, `medium`, `high`, `xhigh` (rejected with `BAD_REQUEST` otherwise). Pi clamps the level to what the current model supports. Success emits `state.changed` with `reason: "thinkingChanged"` after `response.ok`; `state.thinkingLevel` reflects the clamped result.
 
 ### `connection.ping`
 

@@ -91,6 +91,65 @@ test("ProtocolDecoder clamps session.history limit", () => {
 	assert.equal(message.limit, 1000);
 });
 
+test("ProtocolDecoder decodes session.listModels", () => {
+	const message = decodeClientMessage(frame({
+		id: "models_1",
+		type: "session.listModels",
+		protocolVersion: 1,
+		payload: {},
+	}));
+	assert.deepEqual(message, { kind: "session.listModels", id: "models_1" });
+});
+
+test("ProtocolDecoder decodes session.setModel", () => {
+	const message = decodeClientMessage(frame({
+		id: "setmodel_1",
+		type: "session.setModel",
+		protocolVersion: 1,
+		payload: { provider: "anthropic", id: "claude-opus-4-8" },
+	}));
+	assert.deepEqual(message, {
+		kind: "session.setModel",
+		id: "setmodel_1",
+		provider: "anthropic",
+		modelId: "claude-opus-4-8",
+	});
+});
+
+test("ProtocolDecoder rejects session.setModel without provider or id", () => {
+	assert.throws(() => decodeClientMessage(frame({
+		type: "session.setModel",
+		protocolVersion: 1,
+		payload: { provider: "anthropic" },
+	})), (error) => {
+		assert.equal(error instanceof ProtocolError, true);
+		assert.equal(error.code, "BAD_REQUEST");
+		return true;
+	});
+});
+
+test("ProtocolDecoder decodes session.setThinkingLevel", () => {
+	const message = decodeClientMessage(frame({
+		id: "think_1",
+		type: "session.setThinkingLevel",
+		protocolVersion: 1,
+		payload: { level: "high" },
+	}));
+	assert.deepEqual(message, { kind: "session.setThinkingLevel", id: "think_1", level: "high" });
+});
+
+test("ProtocolDecoder rejects an unknown thinking level", () => {
+	assert.throws(() => decodeClientMessage(frame({
+		type: "session.setThinkingLevel",
+		protocolVersion: 1,
+		payload: { level: "ultra" },
+	})), (error) => {
+		assert.equal(error instanceof ProtocolError, true);
+		assert.equal(error.code, "BAD_REQUEST");
+		return true;
+	});
+});
+
 test("ProtocolDecoder rejects malformed command payloads", () => {
 	assert.throws(() => decodeClientMessage(frame({
 		id: "prompt_1",

@@ -98,7 +98,7 @@ pi-remote-control/
 | `DeviceTrust` | Pairing window, code validation, token issue/verify, trusted device list, revocation. Wraps internal `PairingManager` + `TokenStore`. |
 | `ProtocolDecoder` | Decodes raw WebSocket frames into typed `ClientMessage`. Validates protocolVersion, type, payload shape. |
 | `RemoteConnection` | One client's WebSocket lifecycle only — hello, frame receive, heartbeat, auth timeout, close cleanup. Delegates protocol to `RemoteSession`. |
-| `RemoteSession` | One client's auth state + authenticated command dispatch (`session.getState`, `session.history`, `session.prompt`, `session.abort`, `session.compact`, `connection.ping`). |
+| `RemoteSession` | One client's auth state + authenticated command dispatch (`session.getState`, `session.history`, `session.prompt`, `session.abort`, `session.compact`, `session.listModels`, `session.setModel`, `session.setThinkingLevel`, `connection.ping`). |
 | `RemoteServer` | HTTP + WebSocket upgrade server, connection registry, sequence numbers, authenticated-client broadcast. |
 | `PiRemoteAdapter` | Seam around Pi's `ExtensionAPI`/`ExtensionContext`. The only place that touches Pi directly. Owns `getState`, `getHistory`, `prompt`, `abort`, `compact`. |
 | `RemoteEventStream` | Subscribes to Pi events (`message_*`, `tool_execution_*`, `agent_*`, …), maps to stable `pi.*` types, broadcasts only to authenticated clients. Also caches `EditToolDetails.diff` per `toolCallId` from `tool_result` and attaches it to the matching `pi.tool_end` `data.edit` block so iOS can render diffs without watching two event streams. |
@@ -154,12 +154,12 @@ We made an explicit decision to keep this as one reducer rather than per-feature
 
 State (`AppFeature.State`):
 - Form fields (bindable): `serverURL`, `pairingCode`, `deviceName`, `promptText`, `delivery`, `settingsPresented`.
-- Session data: `status`, `hello`, `device`, `token`, `sessionState`, `lastSeq`, `lastError`, `connectedAt`, `log`, `transcript`.
+- Session data: `status`, `hello`, `device`, `token`, `sessionState`, `lastSeq`, `lastError`, `connectedAt`, `log`, `transcript`, `availableModels`.
 - Reconnect bookkeeping: `reconnectAttempt`, `userInitiatedDisconnect`.
 - Derived: `isAuthenticated`, `canPair`, `screen` (used by `AppRootView` to pick `pairing | dashboard | reconnecting`).
 
 Actions (named after the user action that produces them):
-- User: `connectButtonTapped`, `disconnectButtonTapped`, `pairButtonTapped`, `sendPromptButtonTapped`, `abortButtonTapped`, `compactButtonTapped`, `getStateButtonTapped`, `retryReconnectButtonTapped`, `forgetDeviceButtonTapped`, `ellipsisButtonTapped`, `sheetDismissed`, `deepLinkOpened(URL)`.
+- User: `connectButtonTapped`, `disconnectButtonTapped`, `pairButtonTapped`, `sendPromptButtonTapped`, `abortButtonTapped`, `compactButtonTapped`, `getStateButtonTapped`, `retryReconnectButtonTapped`, `forgetDeviceButtonTapped`, `ellipsisButtonTapped`, `sheetDismissed`, `deepLinkOpened(URL)`, `refreshModelsRequested`, `modelSelected(provider:modelId:)`, `thinkingLevelSelected(level:)`.
 - Lifecycle: `onAppear` (load persisted credentials + auto-resume), `scenePhaseDidActivate` (foreground → force reconnect if we hold a token and aren't authenticated).
 - Effect responses: `socketEvent(RemoteSocketClient.Event)`, `keepaliveTick`, `reconnectFire`, `sendSucceeded`, `sendFailed`.
 - Plus `binding(BindingAction<State>)` for form fields.
