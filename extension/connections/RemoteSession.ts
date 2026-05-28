@@ -21,6 +21,8 @@ type OkPayload = {
 	result: unknown;
 };
 
+type StateChangedReason = "promptAccepted" | "abortRequested" | "compactRequested" | "modelChanged" | "thinkingChanged";
+
 export class RemoteSession {
 	private authenticatedDevice?: TrustedDevice;
 
@@ -111,6 +113,29 @@ export class RemoteSession {
 			return;
 		}
 
+		if (message.kind === "session.listModels") {
+			this.sendOk(message.id, message.kind, this.options.adapter.listModels());
+			return;
+		}
+
+		if (message.kind === "session.setModel") {
+			await this.runCommand(message.id, message.kind, async () => {
+				await this.options.adapter.setModel(message.provider, message.modelId);
+				const state = this.options.adapter.getState();
+				return { result: { accepted: true, state }, stateChanged: { reason: "modelChanged" as const, state } };
+			});
+			return;
+		}
+
+		if (message.kind === "session.setThinkingLevel") {
+			await this.runCommand(message.id, message.kind, async () => {
+				this.options.adapter.setThinkingLevel(message.level);
+				const state = this.options.adapter.getState();
+				return { result: { accepted: true, state }, stateChanged: { reason: "thinkingChanged" as const, state } };
+			});
+			return;
+		}
+
 		if (message.kind === "unknown") throw new ProtocolError("UNKNOWN_COMMAND", `Unknown command: ${message.type}`);
 		throw new ProtocolError("UNKNOWN_COMMAND", `Unexpected command: ${message.kind}`);
 	}
@@ -118,7 +143,7 @@ export class RemoteSession {
 	private async runCommand(
 		requestId: string | undefined,
 		command: string,
-		action: () => Promise<{ result: unknown; stateChanged?: { reason: "promptAccepted" | "abortRequested" | "compactRequested"; state: unknown } }>,
+		action: () => Promise<{ result: unknown; stateChanged?: { reason: StateChangedReason; state: unknown } }>,
 	): Promise<void> {
 		try {
 			const outcome = await action();
@@ -140,7 +165,7 @@ export class RemoteSession {
 		this.options.send("state.snapshot", { state: this.options.adapter.getState() });
 	}
 
-	private sendStateChanged(reason: "promptAccepted" | "abortRequested" | "compactRequested", state: unknown): void {
+	private sendStateChanged(reason: StateChangedReason, state: unknown): void {
 		this.options.send("state.changed", { reason, state });
 	}
 

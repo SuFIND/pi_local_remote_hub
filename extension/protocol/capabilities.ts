@@ -1,6 +1,15 @@
 export const SERVER_CAPABILITIES = {
 	authMethods: ["pairingCode", "deviceToken"],
-	commands: ["session.getState", "session.history", "session.prompt", "session.abort", "session.compact"],
+	commands: [
+		"session.getState",
+		"session.history",
+		"session.prompt",
+		"session.abort",
+		"session.compact",
+		"session.listModels",
+		"session.setModel",
+		"session.setThinkingLevel",
+	],
 	events: [
 		"state.snapshot",
 		"state.changed",

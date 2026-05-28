@@ -13,7 +13,12 @@ export type ClientMessage =
 	| { kind: "session.prompt"; id?: string; message: string; delivery: PromptDelivery }
 	| { kind: "session.abort"; id?: string }
 	| { kind: "session.compact"; id?: string }
+	| { kind: "session.listModels"; id?: string }
+	| { kind: "session.setModel"; id?: string; provider: string; modelId: string }
+	| { kind: "session.setThinkingLevel"; id?: string; level: string }
 	| { kind: "unknown"; id?: string; type: string };
+
+const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
 export function decodeClientMessage(data: WebSocket.RawData): ClientMessage {
 	const envelope = parseClientEnvelope(normalizeRawData(data));
@@ -23,6 +28,26 @@ export function decodeClientMessage(data: WebSocket.RawData): ClientMessage {
 	if (type === "session.getState") return { kind: "session.getState", id };
 	if (type === "session.abort") return { kind: "session.abort", id };
 	if (type === "session.compact") return { kind: "session.compact", id };
+	if (type === "session.listModels") return { kind: "session.listModels", id };
+
+	if (type === "session.setModel") {
+		const body = requireRecord(payload, "setModel payload must be an object");
+		return {
+			kind: "session.setModel",
+			id,
+			provider: requireString(body.provider, "Model provider is required"),
+			modelId: requireString(body.id, "Model id is required"),
+		};
+	}
+
+	if (type === "session.setThinkingLevel") {
+		const body = requireRecord(payload, "setThinkingLevel payload must be an object");
+		const level = requireString(body.level, "Thinking level is required");
+		if (!THINKING_LEVELS.includes(level as (typeof THINKING_LEVELS)[number])) {
+			throw new ProtocolError("BAD_REQUEST", `Thinking level must be one of: ${THINKING_LEVELS.join(", ")}`);
+		}
+		return { kind: "session.setThinkingLevel", id, level };
+	}
 
 	if (type === "auth.pair.request") {
 		const body = requireRecord(payload, "Pairing payload must be an object");
