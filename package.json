@@ -1,17 +1,43 @@
 {
-  "name": "pi-remote-control",
+  "name": "pi-remote-ios",
   "version": "0.1.0",
-  "private": true,
-  "description": "Remote-control Pi sessions from mobile devices.",
+  "description": "Pi extension and native iOS companion for controlling active Pi coding-agent sessions over a paired WebSocket.",
+  "license": "MIT",
+  "author": "Tornike Gomareli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tornikegomareli/pi-remote-ios.git"
+  },
+  "homepage": "https://github.com/tornikegomareli/pi-remote-ios#readme",
+  "bugs": {
+    "url": "https://github.com/tornikegomareli/pi-remote-ios/issues"
+  },
   "keywords": [
     "pi-package",
     "pi",
-    "remote-control"
+    "ios",
+    "swiftui",
+    "remote-control",
+    "websocket",
+    "coding-agent"
+  ],
+  "files": [
+    "extension",
+    "docs/PROTOCOL.md",
+    "docs/SECURITY.md",
+    "LICENSE",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "check": "npm run typecheck && npm test",
+    "prepack": "npm run check"
   },
   "pi": {
     "extensions": [
@@ -22,14 +48,15 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.83.0",
     "@types/node": "^22.15.0",
     "@types/ws": "^8.18.1",
+    "jiti": "^2.7.0",
     "typescript": "^5.8.0"
   },
   "dependencies": {
     "@types/qrcode-terminal": "^0.12.2",
     "qrcode-terminal": "^0.12.0",
-    "ws": "^8.20.0"
+    "ws": "^8.21.1"
   }
 }

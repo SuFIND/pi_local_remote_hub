@@ -2,7 +2,7 @@
 
 ## Domain glossary
 
-### Pi Remote Control
+### Pi Remote
 
 The local-first remote-control system that lets a paired client control an active Pi session over WebSocket.
 
@@ -12,7 +12,7 @@ The currently running Pi interactive session that the extension is loaded into. 
 
 ### Remote client
 
-A client application, primarily the native iOS app, connected to the Pi Remote Control WebSocket endpoint.
+A client application, primarily the native iOS app, connected to the Pi Remote WebSocket endpoint.
 
 ### Pairing window
 

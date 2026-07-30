@@ -1,4 +1,4 @@
-# Pi Remote Control Protocol
+# Pi Remote Protocol
 
 Protocol version: `1`.
 
@@ -88,7 +88,7 @@ Client sends:
   "protocolVersion": 1,
   "payload": {
     "code": "123-456",
-    "deviceName": "Tornike's iPhone"
+    "deviceName": "Example iPhone"
   }
 }
 ```
@@ -103,7 +103,7 @@ Server replies:
     "token": "device-token-returned-once",
     "device": {
       "id": "...",
-      "name": "Tornike's iPhone",
+      "name": "Example iPhone",
       "createdAt": "...",
       "lastSeenAt": "..."
     },

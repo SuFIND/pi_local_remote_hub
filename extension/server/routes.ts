@@ -26,7 +26,7 @@ export function handleHttpRoute(req: IncomingMessage, res: ServerResponse, conte
 	}
 
 	if (req.method === "GET" && url.pathname === "/") {
-		sendText(res, 200, "pi-remote-control is running. Native clients should connect to /v1/ws.\n");
+		sendText(res, 200, "Pi Remote is running. Native clients should connect to /v1/ws.\n");
 		return true;
 	}
 

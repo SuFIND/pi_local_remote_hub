@@ -16,9 +16,9 @@ test("DeviceTrust pairs once, returns a token, and disables the pairing code", (
 	assert.equal(pairing.active, true);
 	assert.match(pairing.code, /^\d{3}-\d{3}$/);
 
-	const result = trust.pairDevice({ code: pairing.code, deviceName: "Tornike's iPhone", remoteAddress: "127.0.0.1" });
+	const result = trust.pairDevice({ code: pairing.code, deviceName: "Example iPhone", remoteAddress: "127.0.0.1" });
 	assert.equal(result.ok, true);
-	assert.equal(result.device.name, "Tornike's iPhone");
+	assert.equal(result.device.name, "Example iPhone");
 	assert.equal(typeof result.token, "string");
 	assert.equal(trust.getStatus().pairing.active, false);
 

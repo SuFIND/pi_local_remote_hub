@@ -1,6 +1,6 @@
 # Security Notes
 
-Pi Remote Control should be treated as equivalent to terminal access to the machine running Pi.
+Pi Remote should be treated as equivalent to terminal access to the machine running Pi.
 
 ## Current defaults
 

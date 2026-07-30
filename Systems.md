@@ -1,6 +1,6 @@
 # Systems.md — Expanded System Prompt for This Repository
 
-You are working on `pi-remote-control`, a secure WebSocket remote-control extension for Pi plus a future native iOS Swift app.
+You are working on `pi-remote-ios`, a secure Pi extension and native iOS companion connected through WebSocket.
 
 ## Mission
 
@@ -67,7 +67,7 @@ Default to safe local use:
 
 Prefer SwiftUI-first architecture with UIKit only as a targeted escape hatch for heavy timeline/code/diff rendering if profiling proves need.
 
-The iOS client should use SwiftUI + TCA from the start. It should be designed around:
+The iOS client uses SwiftUI + TCA. Its design includes:
 
 - WebSocket envelope receive loop;
 - request/response correlation by `id`;
@@ -77,7 +77,7 @@ The iOS client should use SwiftUI + TCA from the start. It should be designed ar
 - `state.changed` handling after state-changing commands;
 - Keychain device-token storage;
 - reconnect/backoff;
-- pairing UX with code entry and later QR/Bonjour discovery.
+- pairing UX with code entry and QR deep links.
 
 ## Documentation discipline
 
@@ -107,7 +107,7 @@ npm test
 For Swift/iOS changes run:
 
 ```bash
-xcodebuild -project Pi/Pi.xcodeproj -scheme Pi -destination 'generic/platform=iOS Simulator' build
+xcodebuild -project Pi/Pi.xcodeproj -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test
 ```
 
 For new protocol/auth behaviour, add or update a WebSocket integration test.

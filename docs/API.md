@@ -2,7 +2,7 @@
 
 The old REST/SSE prototype API has been retired.
 
-Pi Remote Control is now WebSocket-first. See:
+Pi Remote for iOS is WebSocket-first. See:
 
 - `docs/PROTOCOL.md`
 - `docs/SECURITY.md`

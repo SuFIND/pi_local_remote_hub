@@ -1,4 +1,4 @@
-# Pi Remote Control Architecture Plan
+# Pi Remote for iOS Architecture Plan
 
 ## Status
 
@@ -9,6 +9,7 @@
 - Architecture deepening pass: DeviceTrust, ProtocolDecoder, RemoteSession, RemoteControlRuntime, and RemoteEventStream are implemented.
 - Swift-facing protocol polish: server capabilities, documented close codes, stable `response.ok`, stable Pi event wrapper, and `state.changed` are implemented.
 - Remote reachability: `/remote start` defaults to Cloudflare Quick Tunnels via `CloudflareTunnel` (cloudflared subprocess) so the paired iPhone works from any network. `/remote start --local` opts out for LAN-only testing. Pairing-code + token auth unchanged.
+- Public preview preparation: repository renamed to `pi-remote-ios`; licensing, package metadata, CI, contribution guidance, and release checks added. Public visibility remains pending.
 
 ## Goal
 
@@ -19,8 +20,8 @@ This is not a throwaway web demo. The extension should expose a stable, versione
 ## Non-goals for the first serious version
 
 - Multi-session daemon/headless Pi management.
-- Cloud relay service.
-- Public Internet exposure by default.
+- Custom cloud relay service.
+- Direct public exposure of the local WebSocket port.
 - Recreating the full Pi TUI in the client.
 - Permission/approval policy system beyond basic abort/prompt controls.
 
@@ -36,9 +37,9 @@ The extension may still serve a tiny diagnostic page later, but the product cont
 
 ```txt
 Pi interactive process
-  └─ pi-remote-control extension
+  └─ Pi Remote extension
       ├─ command layer
-      │   └─ /remote start|stop|status|pair|rotate
+      │   └─ /remote start|stop|status|rotate
       ├─ server layer
       │   ├─ HTTPS/HTTP listener
       │   ├─ WebSocket upgrade handler
@@ -69,7 +70,7 @@ Pi interactive process
 ## Package layout
 
 ```txt
-pi-remote-control/
+pi-remote-ios/
   package.json
   tsconfig.json
   PLAN.md
@@ -626,7 +627,7 @@ Exit criteria:
 - Write `docs/PROTOCOL.md`.
 - Write `docs/SECURITY.md`.
 - Write `docs/SWIFT_CLIENT_NOTES.md`.
-- Add example Swift message types later when Swift app exists.
+- Keep Swift protocol types aligned with the extension.
 
 Exit criteria:
 
@@ -634,18 +635,9 @@ Exit criteria:
 
 ---
 
-# Immediate Next Step
+# Current Next Step
 
-Refactor the current prototype into the module layout above, remove the embedded browser UI from the core path, add `ws`, and implement Phase A + B first.
+Prepare the first public preview:
 
-The first high-quality milestone should be:
-
-```txt
-/remote start
-/remote pair
-WebSocket client connects
-server.hello received
-client pairs
-client sends session.getState
-server replies with state.snapshot/response.ok
-```
+- run CI against the extension and iOS app;
+- publish a tagged release after the repository becomes public.

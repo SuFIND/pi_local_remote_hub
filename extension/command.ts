@@ -7,7 +7,7 @@ import type { RemoteControlRuntime, RemoteRuntimeStatus } from "./runtime/Remote
 
 export function registerRemoteCommand(pi: ExtensionAPI, runtime: RemoteControlRuntime, adapter: PiRemoteAdapter, logger: Logger): void {
 	pi.registerCommand("remote", {
-		description: "Start/stop Pi Remote Control WebSocket server",
+		description: "Start or stop the Pi Remote WebSocket server",
 		getArgumentCompletions: (prefix) => ["start", "stop", "status", "rotate"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
 			adapter.captureContext(ctx);
@@ -16,7 +16,7 @@ export function registerRemoteCommand(pi: ExtensionAPI, runtime: RemoteControlRu
 			if (parsed.action === "stop") {
 				await runtime.stop();
 				ctx.ui.setStatus("pi-remote", undefined);
-				ctx.ui.notify("Pi Remote Control stopped", "info");
+				ctx.ui.notify("Pi Remote stopped", "info");
 				return;
 			}
 
@@ -48,12 +48,12 @@ export function registerRemoteCommand(pi: ExtensionAPI, runtime: RemoteControlRu
 				const hint = parsed.useTunnel && /cloudflared/i.test(message)
 					? "\n\nIf you only need LAN access right now, re-run as `/remote start --local`."
 					: "";
-				ctx.ui.notify(`Pi Remote Control failed to start: ${message}${hint}`, "error");
+				ctx.ui.notify(`Pi Remote failed to start: ${message}${hint}`, "error");
 				return;
 			}
 
 			if (result.lanExposure) {
-				ctx.ui.notify("Pi Remote Control is binding to a non-localhost address. Only use this on trusted networks.", "warning");
+				ctx.ui.notify("Pi Remote is binding to a non-localhost address. Only use this on trusted networks.", "warning");
 			}
 			if (result.publicWebSocketUrl) {
 				ctx.ui.notify(
@@ -127,10 +127,10 @@ async function buildPairingQrBlock(result: { webSocketUrl?: string; pairingCode?
 }
 
 function formatStatus(status: RemoteRuntimeStatus): string {
-	if (!status.running) return "Pi Remote Control is stopped";
+	if (!status.running) return "Pi Remote is stopped";
 	const pairing = status.deviceTrust.pairing;
 	const lines = [
-		"Pi Remote Control is running",
+		"Pi Remote is running",
 		`HTTP: ${status.httpUrl ?? "unknown"}`,
 		`WebSocket: ${status.webSocketUrl ?? "unknown"}`,
 	];

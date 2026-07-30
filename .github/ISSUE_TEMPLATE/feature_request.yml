@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a change to the iOS app, extension, or protocol
+title: ""
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user problem rather than only the proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security impact
+      description: Explain whether this changes reachability, authentication, commands, or stored credentials.
