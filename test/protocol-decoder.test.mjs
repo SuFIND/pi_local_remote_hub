@@ -42,6 +42,50 @@ test("ProtocolDecoder decodes session.prompt with default delivery", () => {
 	});
 });
 
+test("ProtocolDecoder preserves explicit steer delivery", () => {
+	const message = decodeClientMessage(frame({
+		id: "prompt_steer",
+		type: "session.prompt",
+		protocolVersion: 1,
+		payload: { message: "Stop and inspect the failing test", delivery: "steer" },
+	}));
+
+	assert.deepEqual(message, {
+		kind: "session.prompt",
+		id: "prompt_steer",
+		message: "Stop and inspect the failing test",
+		delivery: "steer",
+	});
+});
+
+test("ProtocolDecoder decodes interaction.answer", () => {
+	const message = decodeClientMessage(frame({
+		id: "answer_1",
+		type: "interaction.answer",
+		protocolVersion: 1,
+		payload: { requestId: "question_1", answer: "Simulator" },
+	}));
+
+	assert.deepEqual(message, {
+		kind: "interaction.answer",
+		id: "answer_1",
+		requestId: "question_1",
+		answer: "Simulator",
+	});
+});
+
+test("ProtocolDecoder rejects an empty interaction answer", () => {
+	assert.throws(() => decodeClientMessage(frame({
+		type: "interaction.answer",
+		protocolVersion: 1,
+		payload: { requestId: "question_1", answer: "  " },
+	})), (error) => {
+		assert.equal(error instanceof ProtocolError, true);
+		assert.equal(error.code, "BAD_REQUEST");
+		return true;
+	});
+});
+
 test("ProtocolDecoder rejects malformed JSON", () => {
 	assert.throws(() => decodeClientMessage(Buffer.from("{")), (error) => {
 		assert.equal(error instanceof ProtocolError, true);
@@ -99,6 +143,16 @@ test("ProtocolDecoder decodes session.listModels", () => {
 		payload: {},
 	}));
 	assert.deepEqual(message, { kind: "session.listModels", id: "models_1" });
+});
+
+test("ProtocolDecoder decodes session.listSkills", () => {
+	const message = decodeClientMessage(frame({
+		id: "skills_1",
+		type: "session.listSkills",
+		protocolVersion: 1,
+		payload: {},
+	}));
+	assert.deepEqual(message, { kind: "session.listSkills", id: "skills_1" });
 });
 
 test("ProtocolDecoder decodes session.setModel", () => {

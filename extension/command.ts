@@ -11,6 +11,7 @@ export function registerRemoteCommand(pi: ExtensionAPI, runtime: RemoteControlRu
 		getArgumentCompletions: (prefix) => ["start", "stop", "status", "rotate"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
 			adapter.captureContext(ctx);
+			await adapter.refreshExecutionContext();
 			const parsed = parseRemoteArgs(args);
 
 			if (parsed.action === "stop") {
@@ -45,10 +46,7 @@ export function registerRemoteCommand(pi: ExtensionAPI, runtime: RemoteControlRu
 				});
 			} catch (err) {
 				const message = (err as Error).message;
-				const hint = parsed.useTunnel && /cloudflared/i.test(message)
-					? "\n\nIf you only need LAN access right now, re-run as `/remote start --local`."
-					: "";
-				ctx.ui.notify(`Pi Remote failed to start: ${message}${hint}`, "error");
+				ctx.ui.notify(`Pi Remote failed to start: ${message}`, "error");
 				return;
 			}
 
@@ -93,10 +91,8 @@ function parseRemoteArgs(args: string): ParsedRemoteArgs {
 	let host: string | undefined;
 	let port: number | undefined;
 	let debugRawEvents = DEFAULT_REMOTE_CONFIG.debugRawEvents;
-	// Default to a public Cloudflare Quick Tunnel so the paired iPhone can
-	// connect from any network. Pass `--local` to bind to LAN/loopback only
-	// (testing on the simulator, demos on the same network).
-	let useTunnel = true;
+	// Pi Remote ships as a same-network tool. Tunnel support stays disabled.
+	let useTunnel = false;
 	// Default to silent so the Pi prompt isn't drowned by connect/disconnect
 	// chatter; `--logs` flips structured logging on for this session.
 	let showLogs = false;

@@ -8,12 +8,14 @@ export type ClientMessage =
 	| { kind: "connection.ping"; id?: string }
 	| { kind: "auth.pair.request"; id?: string; code: string; deviceName?: string }
 	| { kind: "auth.token"; id?: string; token: string }
+	| { kind: "interaction.answer"; id?: string; requestId: string; answer: string }
 	| { kind: "session.getState"; id?: string }
 	| { kind: "session.history"; id?: string; limit?: number }
 	| { kind: "session.prompt"; id?: string; message: string; delivery: PromptDelivery }
 	| { kind: "session.abort"; id?: string }
 	| { kind: "session.compact"; id?: string }
 	| { kind: "session.listModels"; id?: string }
+	| { kind: "session.listSkills"; id?: string }
 	| { kind: "session.setModel"; id?: string; provider: string; modelId: string }
 	| { kind: "session.setThinkingLevel"; id?: string; level: string }
 	| { kind: "unknown"; id?: string; type: string };
@@ -29,6 +31,7 @@ export function decodeClientMessage(data: WebSocket.RawData): ClientMessage {
 	if (type === "session.abort") return { kind: "session.abort", id };
 	if (type === "session.compact") return { kind: "session.compact", id };
 	if (type === "session.listModels") return { kind: "session.listModels", id };
+	if (type === "session.listSkills") return { kind: "session.listSkills", id };
 
 	if (type === "session.setModel") {
 		const body = requireRecord(payload, "setModel payload must be an object");
@@ -62,6 +65,16 @@ export function decodeClientMessage(data: WebSocket.RawData): ClientMessage {
 	if (type === "auth.token") {
 		const body = requireRecord(payload, "Token payload must be an object");
 		return { kind: "auth.token", id, token: requireString(body.token, "Token is required") };
+	}
+
+	if (type === "interaction.answer") {
+		const body = requireRecord(payload, "Answer payload must be an object");
+		return {
+			kind: "interaction.answer",
+			id,
+			requestId: requireBoundedString(body.requestId, "Question request id is required", 128),
+			answer: requireBoundedString(body.answer, "Answer is required", 8_000),
+		};
 	}
 
 	if (type === "session.history") {
@@ -134,6 +147,12 @@ function requireRecord(value: unknown, message: string): Record<string, unknown>
 function requireString(value: unknown, message: string): string {
 	if (typeof value !== "string" || value.trim().length === 0) throw new ProtocolError("BAD_REQUEST", message);
 	return value.trim();
+}
+
+function requireBoundedString(value: unknown, message: string, maximumLength: number): string {
+	const result = requireString(value, message);
+	if (result.length > maximumLength) throw new ProtocolError("BAD_REQUEST", `${message} Maximum length is ${maximumLength} characters`);
+	return result;
 }
 
 function optionalString(value: unknown): string | undefined {

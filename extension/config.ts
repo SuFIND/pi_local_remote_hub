@@ -13,7 +13,7 @@ export type RemoteConfig = {
 };
 
 export const DEFAULT_REMOTE_CONFIG: RemoteConfig = {
-	host: "127.0.0.1",
+	host: "0.0.0.0",
 	port: 3769,
 	protocolVersion: PROTOCOL_VERSION,
 	webSocketPath: "/v1/ws",

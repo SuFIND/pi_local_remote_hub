@@ -1,6 +1,7 @@
 import { DeviceTrust, type DeviceTrustStatus } from "../auth/DeviceTrust.js";
 import { isLanExposure, withRemoteConfig, type RemoteConfig } from "../config.js";
 import type { Logger } from "../logging/logger.js";
+import type { QuestionBroker } from "../questions/QuestionBroker.js";
 import type { RemoteServer } from "../server/RemoteServer.js";
 import type { CloudflareTunnel, CloudflareTunnelHandle } from "../tunnel/CloudflareTunnel.js";
 
@@ -34,12 +35,14 @@ export class RemoteControlRuntime {
 		private readonly deviceTrust: DeviceTrust,
 		private readonly tunnel: CloudflareTunnel,
 		private readonly logger: Logger,
+		private readonly questions?: QuestionBroker,
 	) {}
 
 	async start(options: RemoteStartOptions): Promise<RemoteStartResult> {
 		const config = withRemoteConfig(options);
 		const currentConfig = this.server.getConfig();
 		if (this.server.isRunning() && (currentConfig.host !== config.host || currentConfig.port !== config.port)) {
+			this.questions?.cancelAll();
 			await this.server.stop();
 		}
 
@@ -71,6 +74,7 @@ export class RemoteControlRuntime {
 	}
 
 	async stop(): Promise<void> {
+		this.questions?.cancelAll();
 		this.deviceTrust.stopPairing();
 		await this.tunnel.stop();
 		await this.server.stop();

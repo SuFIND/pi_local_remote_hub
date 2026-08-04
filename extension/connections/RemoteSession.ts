@@ -2,6 +2,7 @@ import type { DeviceTrust } from "../auth/DeviceTrust.js";
 import type { TrustedDevice } from "../auth/DeviceTrust.js";
 import type { Logger } from "../logging/logger.js";
 import type { PiRemoteAdapter } from "../pi/PiRemoteAdapter.js";
+import type { QuestionBroker } from "../questions/QuestionBroker.js";
 import { createErrorPayload } from "../protocol/envelopes.js";
 import { ProtocolError, type ProtocolErrorCode } from "../protocol/errors.js";
 import type { ClientMessage } from "../protocol/ProtocolDecoder.js";
@@ -12,6 +13,7 @@ export type RemoteSessionOptions = {
 	adapter: PiRemoteAdapter;
 	deviceTrust: DeviceTrust;
 	logger: Logger;
+	questions: QuestionBroker;
 	send: (type: string, payload?: unknown, requestId?: string) => void;
 };
 
@@ -58,6 +60,7 @@ export class RemoteSession {
 			this.authenticate(result.device);
 			this.options.send("auth.pair.success", { token: result.token, device: result.device, state: this.options.adapter.getState() }, message.id);
 			this.sendStateSnapshot();
+			this.sendPendingQuestion();
 			return;
 		}
 
@@ -68,6 +71,7 @@ export class RemoteSession {
 			this.authenticate(device);
 			this.options.send("auth.token.success", { device, state: this.options.adapter.getState() }, message.id);
 			this.sendStateSnapshot();
+			this.sendPendingQuestion();
 			return;
 		}
 
@@ -75,6 +79,12 @@ export class RemoteSession {
 	}
 
 	private async handleAuthenticatedMessage(message: ClientMessage): Promise<void> {
+		if (message.kind === "interaction.answer") {
+			this.options.questions.answer(message.requestId, message.answer);
+			this.sendOk(message.id, message.kind, { accepted: true, requestId: message.requestId });
+			return;
+		}
+
 		if (message.kind === "session.getState") {
 			this.sendOk(message.id, message.kind, { state: this.options.adapter.getState() });
 			return;
@@ -115,6 +125,11 @@ export class RemoteSession {
 
 		if (message.kind === "session.listModels") {
 			this.sendOk(message.id, message.kind, this.options.adapter.listModels());
+			return;
+		}
+
+		if (message.kind === "session.listSkills") {
+			this.sendOk(message.id, message.kind, this.options.adapter.listSkills());
 			return;
 		}
 
@@ -163,6 +178,11 @@ export class RemoteSession {
 
 	private sendStateSnapshot(): void {
 		this.options.send("state.snapshot", { state: this.options.adapter.getState() });
+	}
+
+	private sendPendingQuestion(): void {
+		const question = this.options.questions.current();
+		if (question) this.options.send("interaction.question", question);
 	}
 
 	private sendStateChanged(reason: StateChangedReason, state: unknown): void {

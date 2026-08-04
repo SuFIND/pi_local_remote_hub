@@ -5,6 +5,7 @@ const EVENT_NAME_MAP: Record<string, string> = {
 	session_shutdown: "pi.session_shutdown",
 	agent_start: "pi.agent_start",
 	agent_end: "pi.agent_end",
+	agent_settled: "pi.agent_settled",
 	turn_start: "pi.turn_start",
 	turn_end: "pi.turn_end",
 	message_start: "pi.message_start",

@@ -7,6 +7,7 @@ const jiti = jitiFactory(import.meta.url);
 const { DeviceTrust } = jiti("../extension/auth/DeviceTrust.ts");
 const { DEFAULT_REMOTE_CONFIG } = jiti("../extension/config.ts");
 const { createLogger } = jiti("../extension/logging/logger.ts");
+const { QuestionBroker } = jiti("../extension/questions/QuestionBroker.ts");
 const { RemoteServer } = jiti("../extension/server/RemoteServer.ts");
 
 function createClient(url) {
@@ -69,17 +70,26 @@ async function withServer(testBody) {
 		},
 		abort: async () => {},
 		compact: () => {},
+		listSkills: () => ({
+			skills: [{ name: "skill:diagnose", description: "Diagnose bugs" }],
+		}),
 	};
-	const server = new RemoteServer({
+	let server;
+	const questions = new QuestionBroker({
+		onQuestion: (question) => server.broadcast("interaction.question", question),
+		onResolved: (resolution) => server.broadcast("interaction.resolved", resolution),
+	});
+	server = new RemoteServer({
 		config: DEFAULT_REMOTE_CONFIG,
 		logger: createLogger("test", "error"),
 		adapter,
 		deviceTrust,
+		questions,
 		getState: () => adapter.getState(),
 	});
 	await server.start({ ...DEFAULT_REMOTE_CONFIG, port: 0 });
 	try {
-		await testBody({ server, deviceTrust, adapter, prompts });
+		await testBody({ server, deviceTrust, adapter, prompts, questions });
 	} finally {
 		await server.stop();
 	}
@@ -93,6 +103,8 @@ async function pairClient(server, deviceTrust) {
 	assert.equal(hello.payload.auth.pairingAvailable, true);
 	assert.equal(hello.payload.capabilities.features.sequenceNumbers, true);
 	assert.equal(hello.payload.capabilities.features.stableOkEnvelope, true);
+	assert.equal(hello.payload.capabilities.commands.includes("session.listSkills"), true);
+	assert.equal(hello.payload.capabilities.commands.includes("interaction.answer"), true);
 
 	send(client, {
 		id: "pair_1",
@@ -145,6 +157,22 @@ test("WebSocket pairs, returns state, and reconnects with token", async () => {
 	});
 });
 
+test("WebSocket returns the active Pi skills after auth", async () => {
+	await withServer(async ({ server, deviceTrust }) => {
+		const { client } = await pairClient(server, deviceTrust);
+
+		send(client, { id: "skills_1", type: "session.listSkills", payload: {} });
+		const response = await client.read();
+		assert.equal(response.type, "response.ok");
+		assert.equal(response.id, "skills_1");
+		assert.equal(response.payload.command, "session.listSkills");
+		assert.deepEqual(response.payload.result, {
+			skills: [{ name: "skill:diagnose", description: "Diagnose bugs" }],
+		});
+		client.close();
+	});
+});
+
 test("WebSocket session.prompt calls the Pi adapter only after auth", async () => {
 	await withServer(async ({ server, deviceTrust, prompts }) => {
 		const { client } = await pairClient(server, deviceTrust);
@@ -162,6 +190,44 @@ test("WebSocket session.prompt calls the Pi adapter only after auth", async () =
 		assert.equal(changed.payload.reason, "promptAccepted");
 		assert.equal(changed.payload.state.cwd, "/tmp/pi-remote-test");
 		client.close();
+	});
+});
+
+test("WebSocket restores and answers a pending question after token reconnect", async () => {
+	await withServer(async ({ server, deviceTrust, questions }) => {
+		const { client, token } = await pairClient(server, deviceTrust);
+		const answerPromise = questions.ask({
+			toolCallId: "tool_question_1",
+			question: "Which target?",
+			options: [{ label: "Simulator" }, { label: "Device" }],
+		});
+		const question = await client.read();
+		assert.equal(question.type, "interaction.question");
+		assert.equal(question.payload.question, "Which target?");
+		client.close();
+
+		const reconnect = createClient(server.getWebSocketUrl());
+		assert.equal((await reconnect.read()).type, "server.hello");
+		send(reconnect, { id: "token_question", type: "auth.token", payload: { token } });
+		assert.equal((await reconnect.read()).type, "auth.token.success");
+		assert.equal((await reconnect.read()).type, "state.snapshot");
+		const restored = await reconnect.read();
+		assert.equal(restored.type, "interaction.question");
+		assert.equal(restored.payload.requestId, question.payload.requestId);
+
+		send(reconnect, {
+			id: "answer_1",
+			type: "interaction.answer",
+			payload: { requestId: restored.payload.requestId, answer: "Simulator" },
+		});
+		const resolved = await reconnect.read();
+		assert.equal(resolved.type, "interaction.resolved");
+		assert.equal(resolved.payload.answer, "Simulator");
+		const response = await reconnect.read();
+		assert.equal(response.type, "response.ok");
+		assert.equal(response.payload.command, "interaction.answer");
+		assert.deepEqual(await answerPromise, { answer: "Simulator", wasCustom: false });
+		reconnect.close();
 	});
 });
 

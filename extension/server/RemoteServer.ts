@@ -8,6 +8,7 @@ import type { RemoteConfig } from "../config.js";
 import type { Logger } from "../logging/logger.js";
 import type { PiRemoteAdapter } from "../pi/PiRemoteAdapter.js";
 import type { RemoteStateSnapshot } from "../pi/stateSnapshot.js";
+import { QuestionBroker } from "../questions/QuestionBroker.js";
 import { createServerEnvelope } from "../protocol/envelopes.js";
 import { ConnectionRegistry } from "../connections/ConnectionRegistry.js";
 import { RemoteConnection } from "../connections/RemoteConnection.js";
@@ -20,6 +21,7 @@ export type RemoteServerOptions = {
 	adapter: PiRemoteAdapter;
 	deviceTrust: DeviceTrust;
 	getState: () => RemoteStateSnapshot;
+	questions?: QuestionBroker;
 };
 
 export class RemoteServer {
@@ -28,6 +30,7 @@ export class RemoteServer {
 	private readonly adapter: PiRemoteAdapter;
 	private readonly deviceTrust: DeviceTrust;
 	private readonly getState: () => RemoteStateSnapshot;
+	private readonly questions: QuestionBroker;
 	private readonly registry = new ConnectionRegistry();
 	private server?: http.Server;
 	private wss?: WebSocketServer;
@@ -39,6 +42,7 @@ export class RemoteServer {
 		this.adapter = options.adapter;
 		this.deviceTrust = options.deviceTrust;
 		this.getState = options.getState;
+		this.questions = options.questions ?? new QuestionBroker();
 	}
 
 	isRunning(): boolean {
@@ -112,6 +116,10 @@ export class RemoteServer {
 		this.registry.broadcast(createServerEnvelope(this.nextSeq(), type, payload));
 	}
 
+	broadcastStateChanged(reason: string): void {
+		this.broadcast("state.changed", { reason, state: this.getState() });
+	}
+
 	private handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
 		const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 		if (url.pathname !== this.config.webSocketPath) {
@@ -134,6 +142,7 @@ export class RemoteServer {
 				adapter: this.adapter,
 				deviceTrust: this.deviceTrust,
 				logger: this.logger,
+				questions: this.questions,
 				send: (type, payload, requestId) => connection.send(createServerEnvelope(this.nextSeq(), type, payload, requestId)),
 			});
 			connection = new RemoteConnection({
