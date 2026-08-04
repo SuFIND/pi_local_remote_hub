@@ -38,6 +38,9 @@ endorsed by Earendil Inc.
 
 ## Package dependencies
 
+The iOS app uses [Aurora](https://github.com/tornikegomareli/Aurora) for its
+Metal-backed session activity glow. Aurora is distributed under the MIT License.
+
 Node and Swift package dependencies remain under their respective licenses.
 Their source repositories and resolved versions are listed in `package-lock.json`
-and `Pi/Pi.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
+and `Tuist/Package.resolved`.
