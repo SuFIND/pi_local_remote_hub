@@ -34,13 +34,22 @@ daemon or manage multiple sessions.
 - Pair through a six-digit code or QR deep link.
 - Store the device token in iOS Keychain.
 - Reconnect with bounded backoff and keepalive checks.
-- Send prompts as normal, steering, or follow-up messages.
+- Send prompts immediately, queue follow-ups, or steer Pi's active work.
+- Show sending failures inline and retry them without retyping.
 - Abort and compact the active session.
 - Change the active model and thinking level.
-- Stream assistant output and tool execution events.
-- Restore current branch history after reconnecting.
+- Discover and invoke Pi skills through slash autocomplete.
+- Show Mac, project, branch, model, and structured session status.
+- Answer blocking Pi questions through first-class mobile cards.
+- Show an Aurora edge glow while Pi is working.
+- Stream assistant output and grouped tool execution events.
+- Copy or share completed assistant responses.
+- Restore current branch history and pending questions after reconnecting.
+- Continue monitoring a user-started run after the app is minimized on iOS 26.
+- Receive privacy-safe local alerts when Pi needs input or finishes.
+- Summarize commands, failures, and changed files after Pi settles.
 - Render edit and write diffs natively on iOS.
-- Connect across networks through an ephemeral Cloudflare Quick Tunnel.
+- Connect an iPhone and Mac on the same local network.
 
 ## How it works
 
@@ -58,19 +67,24 @@ The extension validates every incoming envelope, authenticates each connection,
 and sends Pi events only to authenticated clients. The protocol is versioned
 and documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
+When a user sends a prompt, the iOS app submits an iOS 26 continued-processing
+task. The system provides a Live Activity while the app monitors the run in the
+background. Pi Remote sends generic local notifications for needs-input and
+completion events. These surfaces never contain prompts, responses, commands,
+paths, or credentials.
+
+Background monitoring is best-effort. It stops if the user removes the app from
+the app switcher, the system expires the task, or the local connection cannot be
+restored. Pi continues running on the Mac. This local-only path does not use APNs.
+
 ## Requirements
 
 - macOS with [Pi](https://pi.dev) installed; version 0.83.0 is currently tested
 - Node.js 22.19 or newer for extension development
 - Xcode 26.2 or newer
+- Tuist 4.202.6, pinned in `.mise.toml`
 - iOS 26.2 for the current app target
-- [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) for remote access
-
-Install `cloudflared` on macOS:
-
-```bash
-brew install cloudflared
-```
+- An iPhone and Mac on the same trusted local network
 
 ## Install the Pi extension
 
@@ -94,18 +108,36 @@ loads the local extension automatically.
 
 ## Build the iOS app
 
-Open `Pi/Pi.xcodeproj` in Xcode. Select your own development team and bundle
-identifier before running on a physical device.
+Install the pinned Tuist version, resolve packages, and generate the workspace:
+
+```bash
+mise trust
+mise install
+tuist install
+tuist generate --no-open
+open Pi.xcworkspace
+```
 
 For a simulator build:
 
 ```bash
-xcodebuild -project Pi/Pi.xcodeproj \
+xcodebuild -workspace Pi.xcworkspace \
   -scheme Pi \
   -destination 'generic/platform=iOS Simulator' \
   -skipMacroValidation \
   build
 ```
+
+For physical-device generation, pass your Apple team and bundle identifier:
+
+```bash
+TUIST_PI_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+TUIST_PI_BUNDLE_IDENTIFIER=com.yourname.Pi \
+tuist generate --no-open
+```
+
+`Project.swift` is the project source of truth. `Pi/Pi.xcodeproj` remains as a
+pre-migration fallback.
 
 ## Pair and connect
 
@@ -115,26 +147,22 @@ Start Pi, then run:
 /remote start
 ```
 
-Pi starts a localhost WebSocket server and a Cloudflare Quick Tunnel. It prints
-a public `wss://` URL, a short-lived pairing code, and a QR deep link.
+Pi binds a WebSocket server to the Mac's local network interface. It prints the
+Mac's LAN URL, a short-lived pairing code, and a QR deep link.
 
-Scan the QR code from the iPhone Camera app or enter the URL and code manually.
+Keep the iPhone and Mac on the same trusted network. Scan the QR code with the
+iPhone Camera app, then tap the Pi Remote banner. You can also enter the printed
+`ws://` URL and code manually.
+
 The pairing code expires after two minutes and stops working after one success.
+LAN WebSockets are not encrypted, so do not use Pi Remote on public or untrusted
+Wi-Fi.
 
-For simulator-only access without a tunnel:
-
-```text
-/remote start --local
-```
-
-For an iPhone on the same trusted LAN:
+For Simulator-only loopback access:
 
 ```text
-/remote start --local --host 0.0.0.0
+/remote start --host 127.0.0.1
 ```
-
-LAN binding exposes the server to other devices on that network. Authentication
-still applies, but only use this mode on a network you trust.
 
 ## Remote commands
 
@@ -159,7 +187,9 @@ npm run check
 Run the iOS tests:
 
 ```bash
-xcodebuild -project Pi/Pi.xcodeproj \
+tuist install
+tuist generate --no-open
+xcodebuild -workspace Pi.xcworkspace \
   -scheme Pi \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -skipMacroValidation \
@@ -167,15 +197,19 @@ xcodebuild -project Pi/Pi.xcodeproj \
 ```
 
 The extension test suite covers protocol decoding, authentication, tunnel
-lifecycle, event mapping, diff payloads, and WebSocket integration.
+lifecycle, event mapping, question recovery, run evidence, diff payloads, and
+WebSocket integration.
 
 Use `examples/edit-diff-playground.ts` to exercise edit and write diff rendering
 from a connected phone without modifying application source.
 
-Regenerate the original app icon variants with Pillow installed:
+The live-session app icon source is `Pi/Design/AppIcon-LiveSession.svg`.
+Regenerate its light, dark, and tinted variants with Inkscape and ImageMagick:
 
 ```bash
-python3 scripts/generate-app-icon.py
+brew install --cask inkscape
+brew install imagemagick
+scripts/export-app-icon.sh
 ```
 
 ## Documentation
@@ -183,6 +217,7 @@ python3 scripts/generate-app-icon.py
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md): WebSocket envelopes, commands, events, and error codes
 - [`docs/SECURITY.md`](docs/SECURITY.md): threat model and security invariants
 - [`docs/SWIFT_CLIENT_NOTES.md`](docs/SWIFT_CLIENT_NOTES.md): iOS integration behavior
+- [`docs/TUIST_MIGRATION.md`](docs/TUIST_MIGRATION.md): generated-project setup and migration decisions
 - [`PLAN.md`](PLAN.md): architecture and implementation status
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): development and contribution rules
 - [`SECURITY.md`](SECURITY.md): private vulnerability reporting

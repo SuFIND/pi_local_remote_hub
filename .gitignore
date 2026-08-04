@@ -5,6 +5,11 @@ npm-debug.log*
 xcuserdata/
 *.xcuserstate
 DerivedData/
+/Derived/
+/Pi.xcodeproj/
+/Pi.xcworkspace/
+/Tuist/.build/
+/.ralph/*.state.json
 *.xcresult
 
 .env

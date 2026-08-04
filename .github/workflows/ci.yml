@@ -36,10 +36,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v2
+      - name: Resolve Swift packages
+        run: tuist install
+      - name: Generate iOS workspace
+        run: tuist generate --no-open
       - name: Test on iOS Simulator
         run: >-
           xcodebuild
-          -project Pi/Pi.xcodeproj
+          -workspace Pi.xcworkspace
           -scheme Pi
           -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
           -skipMacroValidation

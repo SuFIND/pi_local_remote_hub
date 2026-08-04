@@ -50,16 +50,20 @@ Do not put source under `extensions/`. If conventional Pi discovery is needed, i
 - `RemoteSession`: owns authenticated remote session command handling.
 - `RemoteServer`: owns HTTP/WebSocket server lifecycle and broadcasts.
 - `PiRemoteAdapter`: owns the seam around Pi APIs.
-- `RemoteEventStream`: owns Pi event mapping and remote event broadcast.
+- `RemoteEventStream`: owns Pi event mapping, structured phase changes, and remote event broadcast.
+- `QuestionBroker`: owns one reconnect-safe pending `remote_question` interaction.
+- `RemoteSessionMonitor`: owns the session phase shown to remote clients.
+- `RunEvidenceCollector`: owns bounded run evidence until `agent_settled`.
 
 ## Security posture
 
-Default to safe local use:
+Default to trusted local-network use:
 
-- bind to localhost by default;
-- require explicit LAN exposure;
+- bind to the Mac's LAN interface for `/remote start`;
+- do not expose the listener to the public Internet;
 - never add unauthenticated command execution or Pi event broadcast;
 - avoid logging secrets and large prompt/tool payloads;
+- never include session content in Live Activity or notification text;
 - validate all external protocol input at runtime;
 - keep token storage in-memory on the extension side until persistent-device revocation UX is designed.
 
@@ -77,7 +81,13 @@ The iOS client uses SwiftUI + TCA. Its design includes:
 - `state.changed` handling after state-changing commands;
 - Keychain device-token storage;
 - reconnect/backoff;
-- pairing UX with code entry and QR deep links.
+- pairing UX with code entry and QR deep links;
+- explicit Queue/Steer delivery while Pi is busy;
+- blocking question cards above the composer;
+- host, branch, and structured phase context;
+- completion evidence with command outcomes and changed files;
+- iOS 26 continued-processing monitoring for user-started runs;
+- privacy-safe local needs-input and completion notifications.
 
 ## Documentation discipline
 
@@ -107,7 +117,11 @@ npm test
 For Swift/iOS changes run:
 
 ```bash
-xcodebuild -project Pi/Pi.xcodeproj -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test
+tuist install
+tuist generate --no-open
+xcodebuild -workspace Pi.xcworkspace -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test
 ```
+
+`Project.swift` and `Tuist/Package.swift` are the iOS project source of truth. `Pi/Pi.xcodeproj` is retained only as a pre-migration fallback.
 
 For new protocol/auth behaviour, add or update a WebSocket integration test.

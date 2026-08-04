@@ -5,13 +5,16 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 ## Current defaults
 
 - `/remote start` starts the server and enables pairing immediately.
-- Binds to `127.0.0.1` by default.
-- LAN exposure requires `--host 0.0.0.0` or another non-localhost host.
+- Binds to `0.0.0.0` and advertises the Mac's LAN address by default.
+- The iPhone and Mac must use the same trusted local network.
 - WebSocket path is `/v1/ws`.
 - Message size is limited by the WebSocket server.
 - Browser `Origin` is checked when present.
 - Unauthenticated clients can only receive `server.hello`, send `connection.ping`, or authenticate.
-- Pi event broadcasts are delivered only to authenticated clients.
+- Pi events, blocking questions, and completion evidence are delivered only to authenticated clients.
+- Question text and answers are bounded and never written to structured logs.
+- Authenticated clients can list skill names and descriptions; that listing omits source paths.
+- Invoked skills run with the active Pi session's tools and permissions.
 - Server closes unauthenticated clients after the auth timeout with close code `4001`.
 - Server closes inactive clients after heartbeat timeout with close code `4000`.
 - Unauthenticated connections close after timeout.
@@ -35,16 +38,32 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 - Server stores only salted hashes.
 - Tokens are in-memory only for now; exiting Pi forgets trusted devices.
 
-## Cloudflare Quick Tunnel (default for `/remote start`)
+## Local network transport
 
-- `/remote start` defaults to spawning `cloudflared tunnel --url http://127.0.0.1:<port>` as a child process so the paired iPhone can reach the session from any network. The local WebSocket server keeps binding to `127.0.0.1` — only the tunnel exposes it. `/remote start --local` skips the tunnel for LAN-only testing.
-- Cloudflare terminates TLS at the edge and forwards plain `http`/`ws` to localhost. The phone sees `wss://<random>.trycloudflare.com/v1/ws`.
-- Pairing-code + device-token auth are unchanged. The tunnel makes the server reachable; it does **not** bypass auth. An attacker who guessed the random Quick Tunnel hostname still cannot pair without the on-screen 6-digit code (which expires after 2 minutes / 5 failed attempts).
-- The tunnel hostname is unguessable in practice (random Cloudflare-issued subdomain, ephemeral per session) but it is publicly resolvable. Treat the auth surface as Internet-exposed during the session: do not weaken pairing-code or token-store invariants assuming LAN-only.
-- Tunnel lifecycle is tied to the server's: stopping the server (or `/remote stop`, or Pi exiting) terminates the cloudflared subprocess. If Pi crashes hard the orphan subprocess will exit when it loses parent stdio.
+- `/remote start` exposes `ws://<mac-lan-address>:3769/v1/ws` to the local network.
+- Pairing codes and device tokens control access, but LAN WebSocket traffic is not encrypted.
+- Use Pi Remote only on a trusted private network.
+- `/remote start --host 127.0.0.1` limits access to the Simulator on the same Mac.
+
+## Execution policy
+
+Pi Remote does not add an approval gate around Pi tools. A paired phone can steer the agent, answer questions, and cause Pi to continue using the active session's tools and permissions. This is intentional YOLO execution, so pairing grants terminal-equivalent control.
+
+The `remote_question` tool pauses only when Pi needs a user decision. Pending questions stay in memory for reconnect, expire after ten minutes, and are cancelled when Pi aborts or `/remote stop` runs.
+
+Completion evidence can include Bash commands and changed file paths. It uses the same authenticated WebSocket boundary as transcript tool output and must not be copied into diagnostics.
+
+## Background monitoring and notifications
+
+A prompt sent from the iOS app can start an iOS 26 continued-processing task. This keeps the existing authenticated local WebSocket eligible for background runtime while the system grants the task. iOS owns the resulting Live Activity.
+
+Live Activity titles, phase subtitles, and local notifications contain only generic state such as working, needs input, completed, failed, or stopped. They never contain prompts, responses, tool output, commands, file paths, hostnames, branch names, tokens, or pairing codes.
+
+This path does not use APNs. Monitoring stops if iOS expires the task, the user removes the app from the app switcher, reconnect attempts fail, or the user disconnects. Stopping mobile monitoring does not stop Pi on the Mac.
 
 ## Do not
 
-- Expose the local port directly to the public Internet without going through a trusted tunnel (Cloudflare Tunnel, Tailscale, etc.).
+- Expose the local port to the public Internet.
+- Use Pi Remote on public or untrusted Wi-Fi.
 - Log tokens, pairing codes, full prompts, or tool outputs.
 - Add unauthenticated command endpoints.

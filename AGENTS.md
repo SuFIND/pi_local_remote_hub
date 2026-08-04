@@ -13,23 +13,16 @@ User flow:
 
 ```
 $ pi                           # in repo root, loads extension via .pi/settings.json
-> /remote start                # default: starts ws server on 127.0.0.1 AND spawns a
-                               # Cloudflare Quick Tunnel exposing it at
-                               # wss://<random>.trycloudflare.com/v1/ws — phone can pair
-                               # and operate from any network with internet for the life
-                               # of this session.
+> /remote start                # starts ws server on the Mac's local network.
                                # Prints status, 6-digit code, and a QR code encoding a
                                # pi-remote://pair?url=...&code=... deep link.
-                               # `/remote start --local` opts out of the tunnel (LAN only,
-                               # for simulator/same-network testing).
 
 iPhone: scan QR from Camera or in-app → auto-fills + auto-pairs
                                # extension returns one-time device token
                                # iOS stores the token in Keychain for future reconnects
 
 iPhone: type prompt → Send     # round-trip through WebSocket → Pi → LLM → streaming back
-                               # works from anywhere with internet for as long as
-                               # /remote start is running on the laptop
+                               # requires the iPhone and Mac on the same trusted network
 ```
 
 `/remote start` means "running and ready to pair." There is intentionally no separate `/remote pair` command.
@@ -38,6 +31,9 @@ iPhone: type prompt → Send     # round-trip through WebSocket → Pi → LLM �
 
 ```
 pi-remote-ios/
+├── Project.swift           Tuist source of truth for iOS targets and settings
+├── Tuist.swift             shared Tuist configuration
+├── Tuist/Package.swift     external Swift package dependencies
 ├── extension/              TypeScript Pi extension (server side)
 │   ├── index.ts            thin entry point
 │   ├── command.ts          /remote command handler + UI notifications
@@ -49,7 +45,9 @@ pi-remote-ios/
 │   ├── protocol/           wire envelopes + ProtocolDecoder + capabilities + error codes
 │   ├── pi/                 PiRemoteAdapter (seam around ExtensionAPI) + sanitizer + editPayload (unified-diff extraction/synthesis)
 │   ├── events/             RemoteEventStream (Pi event subscription + broadcast)
-│   ├── tunnel/             CloudflareTunnel (cloudflared subprocess for remote access)
+│   ├── questions/          remote_question tool + reconnect-safe QuestionBroker
+│   ├── session/            structured phase monitor + run evidence collector
+│   ├── tunnel/             dormant legacy Cloudflare tunnel implementation
 │   └── logging/            structured logger
 │
 ├── test/                   Node test suite for the extension (decoder/auth/integration)
@@ -60,15 +58,17 @@ pi-remote-ios/
 │   ├── SWIFT_CLIENT_NOTES.md  iOS integration notes
 │   └── API.md              short index
 │
-├── Pi/                     iOS app (Xcode project)
-│   ├── Pi.xcodeproj/       PBX project; uses synchronized file groups
+├── Pi/                     iOS app sources and retained pre-Tuist project
+│   ├── Pi.xcodeproj/       pre-migration fallback; do not edit for new changes
 │   ├── PiTests/            Swift Testing coverage for pure app policies
 │   └── Pi/                 app sources (auto-included via synced root group)
 │       ├── PiApp.swift     @main, instantiates the AppFeature Store
 │       ├── DesignSystem/   AppColors / AppFonts / AppSpacing — single source of truth
 │       ├── Components/     reusable views and the native Canvas Pi logo animation
 │       ├── Core/
+│       │   ├── Background/ ContinuedProcessingClient for minimized run monitoring
 │       │   ├── Networking/ RemoteSocketClient (hand-rolled dependency; see comment)
+│       │   ├── Notifications/ privacy-safe local completion/question alerts
 │       │   ├── Persistence/CredentialsStore (Keychain-backed token + URL + device)
 │       │   ├── Protocol/   wire-format types (mirror of extension/protocol)
 │       │   ├── Model/      domain types (transcript, state snapshot, PairingDeepLink)
@@ -77,7 +77,7 @@ pi-remote-ios/
 │           ├── AppFeature.swift       single TCA reducer that owns the session domain
 │           ├── AppRootView.swift      routes by AppFeature.State.screen
 │           ├── Pairing/               PairingView
-│           ├── Dashboard/             DashboardView + ConnectionCard + Composer + Transcript/
+│           ├── Dashboard/             DashboardView + DashboardHeader + Composer + Transcript/
 │           ├── Reconnect/             ReconnectView
 │           └── Settings/              SessionSettingsView + EnvelopeLogRow
 │
@@ -98,12 +98,15 @@ pi-remote-ios/
 | `DeviceTrust` | Pairing window, code validation, token issue/verify, trusted device list, revocation. Wraps internal `PairingManager` + `TokenStore`. |
 | `ProtocolDecoder` | Decodes raw WebSocket frames into typed `ClientMessage`. Validates protocolVersion, type, payload shape. |
 | `RemoteConnection` | One client's WebSocket lifecycle only — hello, frame receive, heartbeat, auth timeout, close cleanup. Delegates protocol to `RemoteSession`. |
-| `RemoteSession` | One client's auth state + authenticated command dispatch (`session.getState`, `session.history`, `session.prompt`, `session.abort`, `session.compact`, `session.listModels`, `session.setModel`, `session.setThinkingLevel`, `connection.ping`). |
+| `RemoteSession` | One client's auth state + authenticated command dispatch (`interaction.answer`, `session.getState`, `session.history`, `session.prompt`, `session.abort`, `session.compact`, `session.listModels`, `session.listSkills`, `session.setModel`, `session.setThinkingLevel`, `connection.ping`). |
 | `RemoteServer` | HTTP + WebSocket upgrade server, connection registry, sequence numbers, authenticated-client broadcast. |
-| `PiRemoteAdapter` | Seam around Pi's `ExtensionAPI`/`ExtensionContext`. The only place that touches Pi directly. Owns `getState`, `getHistory`, `prompt`, `abort`, `compact`. |
-| `RemoteEventStream` | Subscribes to Pi events (`message_*`, `tool_execution_*`, `agent_*`, …), maps to stable `pi.*` types, broadcasts only to authenticated clients. Also caches `EditToolDetails.diff` per `toolCallId` from `tool_result` and attaches it to the matching `pi.tool_end` `data.edit` block so iOS can render diffs without watching two event streams. |
+| `PiRemoteAdapter` | Seam around Pi's active session operations. Owns state/history, prompt delivery, model/thinking changes, abort, compact, and execution context. Registration modules use only Pi's command, tool, or event registration surfaces. |
+| `RemoteEventStream` | Subscribes to Pi events (`message_*`, `tool_execution_*`, `agent_*`, …), maps to stable `pi.*` types, broadcasts only to authenticated clients, drives structured phase changes, and emits run completion evidence after `agent_settled`. Also attaches edit/write diffs to matching `pi.tool_end` events. |
 | `editPayload` | Pure helper: `extractEditPayload(toolResultEvent)` lifts Pi's own diff for `edit`, `synthesizeWriteDiff(toolResultEvent)` builds an all-added `/dev/null` diff for `write`. Both bypass the sanitizer's 20K-char cap on the `diff` field so the iOS app can render whole diffs regardless of size. |
-| `CloudflareTunnel` | Spawns and lifecycles a `cloudflared tunnel --url http://127.0.0.1:<port>` subprocess (Cloudflare Quick Tunnel). Used by `/remote start --tunnel` to make the localhost-bound WebSocket reachable at `wss://<random>.trycloudflare.com/v1/ws` without an account. Pairing-code + device-token auth still gate everything on the wire; the tunnel only handles reachability. |
+| `QuestionBroker` | Owns one bounded pending `remote_question`, restores it after token reconnect, and resolves answer, abort, timeout, or server stop. |
+| `RemoteSessionMonitor` | Tracks `idle`, `running`, `queued`, `compacting`, `needsInput`, `completed`, and `failed` phases. |
+| `RunEvidenceCollector` | Accumulates bounded command outcomes, tool failures, and changed-file statistics until `agent_settled`. |
+| `CloudflareTunnel` | Legacy tunnel implementation retained in source. `/remote start` does not activate it. |
 
 ### Wire protocol (summary; full spec in `docs/PROTOCOL.md`)
 
@@ -118,7 +121,7 @@ pi-remote-ios/
 
 ### Security invariants
 
-- Default bind is `127.0.0.1`. LAN exposure requires explicit `--host 0.0.0.0`.
+- `/remote start` binds to `0.0.0.0` and advertises the Mac's LAN address.
 - Unauthenticated clients can only receive `server.hello`, send `connection.ping`, or auth.
 - Pi event broadcasts go only to authenticated connections.
 - Pairing code expires after 2 minutes; 5 failed attempts disable the code; successful pair disables the code.
@@ -131,14 +134,13 @@ pi-remote-ios/
 ```
 npm install
 npm run typecheck     # tsc --noEmit
-npm test              # node --test test/*.test.mjs (41 tests)
+npm test              # node --test test/*.test.mjs (66 tests)
 
 pi                    # from repo root, loads extension via .pi/settings.json
-> /remote start            # default: tunnel via Cloudflare Quick Tunnel
-                           # (requires `brew install cloudflared` once)
+> /remote start            # local network; iPhone and Mac must share trusted Wi-Fi
                            # logs are silent by default — pass --logs to see
                            # connect/disconnect/auth events for debugging
-> /remote start --local    # opt out of the tunnel — LAN/loopback only
+> /remote start --host 127.0.0.1  # Simulator-only loopback
 > /remote start --logs     # enable structured JSON logs for this session
 ```
 
@@ -153,15 +155,15 @@ We made an explicit decision to keep this as one reducer rather than per-feature
 ### Reducer surface
 
 State (`AppFeature.State`):
-- Form fields (bindable): `serverURL`, `pairingCode`, `deviceName`, `promptText`, `delivery`, `settingsPresented`.
-- Session data: `status`, `hello`, `device`, `token`, `sessionState`, `lastSeq`, `lastError`, `connectedAt`, `log`, `transcript`, `availableModels`.
+- Form fields (bindable): `serverURL`, `pairingCode`, `deviceName`, `promptText`, `questionAnswerText`, `busyPromptDelivery`, `modelPickerPresented`, `settingsPresented`.
+- Session data: `status`, `hello`, `device`, `token`, `sessionState`, `pendingQuestion`, `lastRun`, `lastSeq`, `lastError`, `connectedAt`, `log`, `transcript`, `pendingPromptRequests`, `backgroundRunMonitoringID`, `backgroundRunPromptRequestID`, `copiedResponseID`, `availableModels`, `availableSkills`.
 - Reconnect bookkeeping: `reconnectAttempt`, `userInitiatedDisconnect`.
 - Derived: `isAuthenticated`, `canPair`, `screen` (used by `AppRootView` to pick `pairing | dashboard | reconnecting`).
 
 Actions (named after the user action that produces them):
-- User: `connectButtonTapped`, `disconnectButtonTapped`, `pairButtonTapped`, `sendPromptButtonTapped`, `abortButtonTapped`, `compactButtonTapped`, `getStateButtonTapped`, `retryReconnectButtonTapped`, `forgetDeviceButtonTapped`, `ellipsisButtonTapped`, `sheetDismissed`, `deepLinkOpened(URL)`, `refreshModelsRequested`, `modelSelected(provider:modelId:)`, `thinkingLevelSelected(level:)`.
+- User: `connectButtonTapped`, `disconnectButtonTapped`, `pairButtonTapped`, `sendPromptButtonTapped`, `questionOptionButtonTapped(requestId:answer:)`, `questionCustomAnswerButtonTapped`, `retryPromptButtonTapped(id:)`, `copyResponseButtonTapped(id:text:)`, `skillSuggestionTapped(name:)`, `abortButtonTapped`, `compactButtonTapped`, `getStateButtonTapped`, `retryReconnectButtonTapped`, `forgetDeviceButtonTapped`, `ellipsisButtonTapped`, `sheetDismissed`, `deepLinkOpened(URL)`, `refreshModelsRequested`, `modelPickerButtonTapped`, `modelSelected(provider:modelId:)`, `thinkingLevelSelected(level:)`.
 - Lifecycle: `onAppear` (load persisted credentials + auto-resume), `scenePhaseDidActivate` (foreground → force reconnect if we hold a token and aren't authenticated).
-- Effect responses: `socketEvent(RemoteSocketClient.Event)`, `keepaliveTick`, `reconnectFire`, `sendSucceeded`, `sendFailed`.
+- Effect responses: `backgroundRunMonitoringStarted`, `socketEvent(RemoteSocketClient.Event)`, `keepaliveTick`, `reconnectFire`, `sendSucceeded`, `sendFailed`.
 - Plus `binding(BindingAction<State>)` for form fields.
 
 `deepLinkOpened(URL)` is dispatched by `RootView`'s `.onOpenURL` when the OS routes a `pi-remote://pair?url=...&code=...` URI into the app (Camera-app scan, Safari, in-app scanner later). The reducer parses via `PairingDeepLink.parse`, fills `serverURL` + `pairingCode`, sets a transient `autoPairOnReady` flag, and runs `connectEffect`. `handleServerHello` consumes the flag and fires `auth.pair.request` automatically. Already-authenticated state is a no-op (the user must `forgetDevice` first to re-pair).
@@ -174,6 +176,9 @@ Injected via TCA's `@Dependency`:
 
 - `\.remoteSocket` → `RemoteSocketClient` (hand-rolled; **not** `@DependencyClient` — that macro silently substitutes parameter defaults for actual arguments on iOS 26 and burned us once). Closures: `open(String) → AsyncStream<Event>`, `send(String) async throws → Void`, `close() async → Void`. Live impl wraps `URLSessionWebSocketTask` in a private actor.
 - `\.credentialsStore` → `CredentialsStore`. Keychain-backed (KeychainSwift, `.afterFirstUnlock`) JSON of `{token, serverURL, device}`. Saved on `auth.pair.success` and `auth.token.success`, cleared on forget-device and on auth-failure rejection. Loaded by `onAppear` to drive cold-launch resume.
+- `\.clipboard` → `ClipboardClient`. Copies completed assistant responses through the system pasteboard and becomes a no-op in tests unless overridden.
+- `\.continuedProcessing` → `ContinuedProcessingClient`. Submits one iOS 26 `BGContinuedProcessingTask` for a user-started Pi run, updates its generic phase, and ends it with the run. The system provides the Live Activity.
+- `\.localNotifications` → `LocalNotificationClient`. Requests alert permission in the context of the first monitored prompt and sends generic needs-input/completion alerts without session content.
 - `\.continuousClock` → `ContinuousClock` for keepalive (20s) and backoff (`0.5/1/2/5/10s`, capped at 8 attempts ≈ 30s).
 - `\.uuid` → `UUIDGenerator` for request IDs and entry IDs (overridden to `.incrementing` in tests).
 - `\.date` → `DateGenerator` for log timestamps and `connectedAt`.
@@ -188,21 +193,21 @@ Injected via TCA's `@Dependency`:
 
 ### Components and shared UI
 
-`Components/` is feature-agnostic. Each file has a top-of-file docstring (when to use, parameters, example) and one or more `#Preview` macros covering meaningful states. Files: `Card`, `PrimaryButton`, `StatusDot`, `ScreenHeader`, `SectionLabel`, `DiagnosticRow`, `QuickActionButton`, `StreamingLine`, `MarkdownText`, `ReconnectBanner`, `PiDiffView`.
+`Components/` is feature-agnostic. Each file has a top-of-file docstring (when to use, parameters, example) and one or more `#Preview` macros covering meaningful states. Files include `Card`, `PrimaryButton`, `StatusDot`, `ScreenHeader`, `SectionLabel`, `DiagnosticRow`, `JumpToLatestButton`, `MarkdownText`, `ReconnectBanner`, `PiDiffView`, and `SessionActivityGlow`.
 
 `PiDiffView` renders Pi's annotated diff format directly — one row per source line, gutter + colored prefix + per-row horizontal scroll for long content. We skip the gitdiff round-trip for edit/write tool diffs because Pi already produces a fully formatted, terminal-ready diff; the abstraction tax wasn't earning its keep and gitdiff's row layout had a long-line clipping interaction. `gitdiff` is still pinned in `Package.resolved` for any future surface that consumes standard unified-diff text.
 
-`MarkdownText` renders markdown via `AttributedString(markdown:options:)` with `interpretedSyntax: .full` — iOS 26's block-level markdown rendering in `Text` covers lists, headings, code blocks, and inline emphasis. Falls back to plain text when streaming buffers end mid-token. Used by `AssistantMessageCard` for assistant output; user-typed prompts stay plain so unintentional `*` characters do not become italics.
+`MarkdownText` renders markdown via `AttributedString(markdown:options:)` with `interpretedSyntax: .full` — iOS 26's block-level markdown rendering in `Text` covers lists, headings, code blocks, and inline emphasis. Falls back to plain text when streaming buffers end mid-token. Used by `AssistantMessage` for direct-canvas assistant output; user-typed prompts stay plain so unintentional `*` characters do not become italics.
 
 `Components/AnimatedLogo/` contains `PiLogoAnimationView`, a native SwiftUI `Canvas` port of the pi.dev logo intro. It reuses the same 8×9 board, pieces, colors, and timing constants extracted from pi.dev; prefer it over GIF/MP4 assets for app UI.
 
-The app icon is an original terminal-and-radio mark generated by `scripts/generate-app-icon.py`. Do not use the official Pi logo as the app icon.
+The app icon is the live-session mark in `Pi/Design/AppIcon-LiveSession.svg`. Export its asset variants with `scripts/export-app-icon.sh`.
 
 ### Features
 
-- `AppFeature.swift` + `AppRootView.swift` — root reducer + screen router. `AppRootView` runs a local "reconnect escalation" timer: while `screen == .reconnecting` it renders the slim `ReconnectBanner` over the live Dashboard for the first ~1.2s (warm bounces resolve invisibly); if the reconnect drags past that, or if the transcript is empty (cold-launch resume — nothing meaningful to render under a banner), it promotes to the full `ReconnectView` card overlay.
+- `AppFeature.swift` + `AppRootView.swift` — root reducer + screen router. A user-started prompt also starts best-effort continued processing so the WebSocket can monitor Pi after minimization. iOS provides a system Live Activity, and needs-input/completion events can create generic local notifications. Swiping the app away or system expiration stops monitoring. `AppRootView` runs a local "reconnect escalation" timer: while `screen == .reconnecting` it renders the slim `ReconnectBanner` over the live Dashboard for the first ~1.2s (warm bounces resolve invisibly); if the reconnect drags past that, or if the transcript is empty (cold-launch resume — nothing meaningful to render under a banner), it promotes to the full `ReconnectView` card overlay.
 - `Pairing/PairingView.swift` — host field, 6-digit code grid, status banner, pair CTA.
-- `Dashboard/DashboardView.swift` + `ConnectionCard.swift` + `Composer.swift` + `Transcript/{TranscriptEntryView, UserMessageBubble, AssistantMessageCard, ToolCallCard, EditToolCard, DiffReviewSheet, InfoLine}.swift` — main screen. `EditToolCard` renders `edit`/`write` tool calls as a compact summary chip and opens `DiffReviewSheet` (modal, `.large` detent, X dismiss). The sheet renders the diff through `PiDiffView` (see Components above).
+- `Dashboard/DashboardView.swift` + `DashboardHeader.swift` + `ModelPickerView.swift` + `Composer.swift` + `QuestionCard.swift` + `SkillSuggestions.swift` + `Transcript/` — chat-first main screen with slash autocomplete, explicit Queue/Steer, blocking question cards, structured host/branch/phase context, and completion evidence. The header opens a searchable bottom-sheet model picker that hides unconfigured models. Busy sessions expose explicit Queue/Steer delivery and a separate Stop control. User prompts appear optimistically with sending, queued, sent, failed, and retry states. Consecutive tools collapse into an expandable activity group. Completed assistant responses expose Copy and Share actions. Automatic transcript following pauses when the user scrolls away and resumes through `JumpToLatestButton`. Aurora renders a full-screen edge glow while Pi works.
 - `Reconnect/ReconnectView.swift` — overlay during auto-reconnect.
 - `Settings/SessionSettingsView.swift` + `EnvelopeLogRow.swift` — diagnostic sheet.
 
@@ -213,17 +218,21 @@ The app icon is an original terminal-and-radio mark generated by `scripts/genera
 ### Building
 
 ```
-xcodebuild -project Pi/Pi.xcodeproj \
+tuist install
+tuist generate --no-open
+xcodebuild -workspace Pi.xcworkspace \
            -scheme Pi \
            -destination 'generic/platform=iOS Simulator' \
            build
 ```
 
-`Pi.xcodeproj` uses Xcode 16+ synchronized file groups (`PBXFileSystemSynchronizedRootGroup`), so any new `.swift` file under `Pi/Pi/` is auto-included. No pbxproj edits needed for sources.
+`Project.swift` is the source of truth. It includes Swift files under `Pi/Pi/`, tests under `Pi/PiTests/`, and the asset catalog. Regenerate after manifest or file changes. Generated `Pi.xcodeproj`, `Pi.xcworkspace`, and `Derived/` paths are ignored.
 
-The project links `ComposableArchitecture` (≥1.25.5) as the only direct SPM dependency. Transitive: `Dependencies`, `CasePaths`, `combine-schedulers`, `swift-clocks`, etc.
+`Pi/Pi.xcodeproj` remains only as a rollback reference during migration. Do not update it for new source, setting, or dependency changes.
 
-The `PiTests` target uses Swift Testing. Run it against an installed simulator with `xcodebuild -project Pi/Pi.xcodeproj -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test`.
+`Tuist/Package.swift` pins `ComposableArchitecture` 1.25.5, `KeychainSwift` 24.0.0, `gitdiff` 0.1.0, and `Aurora` 0.4.0. `Tuist/Package.resolved` preserves the existing transitive versions.
+
+The `PiTests` target uses Swift Testing. Run it with `xcodebuild -workspace Pi.xcworkspace -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test`.
 
 ## Conventions
 
@@ -238,7 +247,7 @@ The `PiTests` target uses Swift Testing. Run it against an installed simulator w
 
 ### TypeScript extension
 
-- One concept per module file. `RemoteSession` does not touch sockets; `RemoteConnection` does not interpret protocol; `PiRemoteAdapter` is the only place that touches Pi APIs.
+- One concept per module file. `RemoteSession` does not touch sockets; `RemoteConnection` does not interpret protocol; `PiRemoteAdapter` is the only place that executes active Pi session operations. Registration modules may call `registerCommand`, `registerTool`, or `on`.
 - No legacy `extensions/` directory — source is in `extension/`.
 - Wire-format changes require parallel updates to the iOS `Core/Protocol/` types.
 - Run `npm run typecheck` after any change. Run `npm test` for protocol/auth/runtime/event-stream changes.

@@ -10,7 +10,8 @@ Requirements:
 - Node.js 22.19 or newer
 - Pi (`@earendil-works/pi-coding-agent` 0.83.0)
 - Xcode 26.2 or newer
-- `cloudflared` for tunnel testing
+- Tuist 4.202.6, pinned in `.mise.toml`
+- An iPhone and Mac on the same trusted network for physical-device testing
 
 Install Node dependencies:
 
@@ -24,10 +25,14 @@ Run Pi with the extension directly:
 pi -e ./extension/index.ts
 ```
 
-Run the iOS tests:
+Generate the iOS workspace and run its tests:
 
 ```bash
-xcodebuild -project Pi/Pi.xcodeproj \
+mise trust
+mise install
+tuist install
+tuist generate --no-open
+xcodebuild -workspace Pi.xcworkspace \
   -scheme Pi \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -skipMacroValidation \
@@ -40,7 +45,9 @@ Before opening a pull request, run:
 
 ```bash
 npm run check
-xcodebuild -project Pi/Pi.xcodeproj \
+tuist install
+tuist generate --no-open
+xcodebuild -workspace Pi.xcworkspace \
   -scheme Pi \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -skipMacroValidation \
@@ -54,6 +61,8 @@ xcodebuild -project Pi/Pi.xcodeproj \
 - Keep socket lifecycle inside `RemoteConnection`.
 - Keep authenticated command handling inside `RemoteSession`.
 - Mirror wire-format changes in `Pi/Pi/Core/Protocol/`.
+- Treat `Project.swift` and `Tuist/Package.swift` as the iOS project source of truth.
+- Regenerate after adding source files or changing project settings.
 - Update `docs/PROTOCOL.md` when messages change.
 - Update `docs/SECURITY.md` when security assumptions change.
 - Add tests for protocol, authentication, and runtime behavior.

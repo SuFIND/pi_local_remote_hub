@@ -8,12 +8,15 @@
 - Phase D — More command routing/hardening: core commands implemented; command execution now lives behind RemoteSession.
 - Architecture deepening pass: DeviceTrust, ProtocolDecoder, RemoteSession, RemoteControlRuntime, and RemoteEventStream are implemented.
 - Swift-facing protocol polish: server capabilities, documented close codes, stable `response.ok`, stable Pi event wrapper, and `state.changed` are implemented.
-- Remote reachability: `/remote start` defaults to Cloudflare Quick Tunnels via `CloudflareTunnel` (cloudflared subprocess) so the paired iPhone works from any network. `/remote start --local` opts out for LAN-only testing. Pairing-code + token auth unchanged.
+- Single-session supervision: structured phases, host/branch context, remote questions, Queue/Steer, and run completion evidence are implemented.
+- Remote reachability: `/remote start` binds to the Mac's LAN interface. The iPhone and Mac must use the same trusted local network.
 - Public preview preparation: repository renamed to `pi-remote-ios`; licensing, package metadata, CI, contribution guidance, and release checks added. Public visibility remains pending.
+- iOS project generation: Tuist 4.202.6 manifests now define the app, tests, settings, resources, schemes, and pinned Swift packages. The pre-migration Xcode project remains as a rollback reference.
+- Minimized run monitoring: user-started prompts submit an iOS 26 continued-processing task. The system presents its Live Activity while the app keeps the local WebSocket active, and generic local notifications report needs-input and completion events. APNs is not used.
 
 ## Goal
 
-Build a secure, high-quality Pi extension that lets a native Swift app control an active Pi session over a local or tunneled connection.
+Build a secure, high-quality Pi extension that lets a native Swift app control an active Pi session over a trusted local network.
 
 This is not a throwaway web demo. The extension should expose a stable, versioned remote-control protocol with a clean TypeScript architecture, strong pairing/authentication, robust WebSocket streaming, and room for future native clients.
 
@@ -71,6 +74,9 @@ Pi interactive process
 
 ```txt
 pi-remote-ios/
+  Project.swift              # Tuist source of truth for iOS targets
+  Tuist.swift                # shared Tuist configuration
+  Tuist/Package.swift        # pinned Swift package declarations
   package.json
   tsconfig.json
   PLAN.md
@@ -109,6 +115,12 @@ pi-remote-ios/
       sanitizer.ts           # redact/limit event payloads
     events/
       RemoteEventStream.ts   # Pi event mapping + broadcast
+    questions/
+      QuestionBroker.ts      # reconnect-safe pending question
+      registerRemoteQuestionTool.ts
+    session/
+      RemoteSessionMonitor.ts
+      RunEvidenceCollector.ts
     logging/
       logger.ts
   .pi/extensions/            # optional local symlink/install target, not source
@@ -144,20 +156,15 @@ Why not SSE + REST for final architecture:
 
 ## Default exposure
 
-Default bind address must be localhost:
+The default command binds to the Mac's local network interface:
 
 ```txt
 /remote start
-# binds 127.0.0.1
+# binds 0.0.0.0 and advertises the Mac's LAN address
 ```
 
-LAN exposure must be explicit:
-
-```txt
-/remote start --host 0.0.0.0
-```
-
-When binding non-localhost, Pi should show a clear warning.
+Use this only when the iPhone and Mac share a trusted private network. Pi shows
+a warning when it starts the LAN listener.
 
 ## Threat model
 
@@ -269,13 +276,9 @@ Rules:
 
 ## TLS
 
-Local LAN v1 can use `ws://` with token auth.
-
-For non-LAN/tunnel usage:
-
-- **Cloudflare Quick Tunnels** are integrated: `/remote start --tunnel` spawns `cloudflared tunnel --url http://127.0.0.1:<port>` and emits the resulting `wss://*.trycloudflare.com/v1/ws` in the printed status and QR. Zero-account, ephemeral hostname per session.
-- Tailscale Funnel, custom domains, and `wss://` behind a user-managed reverse proxy remain valid alternatives — the wire protocol is host-agnostic.
-- Do not build a custom Internet relay in v1.
+Local LAN v1 uses `ws://` with pairing-code and device-token authentication.
+The traffic is not encrypted. Do not expose the port to the Internet or use the
+app on untrusted Wi-Fi.
 
 ---
 
@@ -352,6 +355,7 @@ or:
 ```txt
 auth.pair.request
 auth.token
+interaction.answer
 session.getState
 session.prompt
 session.abort
@@ -380,6 +384,10 @@ pi.session_start
 pi.session_shutdown
 pi.agent_start
 pi.agent_end
+pi.agent_settled
+interaction.question
+interaction.resolved
+session.run.completed
 pi.turn_start
 pi.turn_end
 pi.message_start
@@ -408,7 +416,7 @@ Instead:
 
 # Pi Adapter Boundary
 
-Only `PiRemoteAdapter` should know Pi extension APIs deeply.
+Only `PiRemoteAdapter` should execute active Pi session operations. Command, tool, and event modules may use Pi's narrow registration surfaces.
 
 Responsibilities:
 

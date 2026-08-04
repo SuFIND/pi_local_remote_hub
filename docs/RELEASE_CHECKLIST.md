@@ -44,6 +44,7 @@ product's primary mark. The press-kit contact is `rfc@earendil.com`.
 - [x] Create original light, dark, and tinted Pi Remote app icons.
 - [x] Keep iOS distribution source-only; no App Store release is planned.
 - [x] Preserve third-party notices in the source distribution.
+- [x] Generate the iOS app and test target from pinned Tuist manifests.
 
 ## First release
 
