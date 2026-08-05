@@ -22,5 +22,5 @@ on `main`. After releases begin, this file will list supported versions.
 
 ## Security model
 
-See `docs/SECURITY.md` for pairing, token storage, tunnel exposure, payload
-limits, and protocol invariants.
+See `docs/SECURITY.md` for pairing, token storage, local-network exposure,
+payload limits, and protocol invariants.

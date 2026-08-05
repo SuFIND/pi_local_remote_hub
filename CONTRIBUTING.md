@@ -54,6 +54,18 @@ xcodebuild -workspace Pi.xcworkspace \
   test
 ```
 
+Before a release, run live iOS acceptance with a configured Pi model:
+
+```bash
+scripts/run-e2e.mjs
+```
+
+Run Linux extension acceptance with Docker:
+
+```bash
+scripts/verify-linux-e2e.mjs
+```
+
 ## Change rules
 
 - Keep `extension/index.ts` as a small entry point.

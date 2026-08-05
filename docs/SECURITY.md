@@ -36,12 +36,14 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 - Tokens are returned once after pairing.
 - Swift app should store tokens in Keychain.
 - Server stores only salted hashes.
-- Tokens are in-memory only for now; exiting Pi forgets trusted devices.
+- Tokens are in-memory only for now; exiting Pi or running `/reload` forgets trusted devices.
 
 ## Local network transport
 
 - `/remote start` exposes `ws://<host-lan-address>:3769/v1/ws` to the local network.
 - Pairing codes and device tokens control access, but LAN WebSocket traffic is not encrypted.
+- A local peer that can observe traffic can read prompts, responses, tool data, and bearer tokens.
+- A local peer that can alter traffic can reuse a stolen token for terminal-equivalent control.
 - Use Pi Remote only on a trusted private network.
 - `/remote start --host 127.0.0.1` limits access to a client on the same host.
 
@@ -64,6 +66,7 @@ This path does not use APNs. Monitoring stops if iOS expires the task, the user 
 ## Do not
 
 - Expose the local port to the public Internet.
-- Use Pi Remote on public or untrusted Wi-Fi.
+- Forward port `3769` through a router, tunnel, or public proxy.
+- Use Pi Remote on public, guest, or untrusted Wi-Fi.
 - Log tokens, pairing codes, full prompts, or tool outputs.
 - Add unauthenticated command endpoints.

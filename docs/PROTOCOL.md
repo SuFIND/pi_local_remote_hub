@@ -112,7 +112,7 @@ Server replies:
 }
 ```
 
-Store `token` in iOS Keychain. The server stores only a token hash in memory.
+Store `token` in iOS Keychain. The server stores only a token hash in memory. Exiting Pi or reloading the extension invalidates the token.
 
 After auth, server also emits:
 

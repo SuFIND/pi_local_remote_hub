@@ -58,8 +58,9 @@ pi-remote-ios/
 │   ├── SWIFT_CLIENT_NOTES.md  iOS integration notes
 │   └── API.md              short index
 │
-├── Pi/                     iOS app sources and retained pre-Tuist project
+├── Pi/                     iOS app sources and tests
 │   ├── PiTests/            Swift Testing coverage for pure app policies
+│   ├── PiUITests/          XCTest UI coverage for live release acceptance
 │   └── Pi/                 app sources (auto-included via synced root group)
 │       ├── PiApp.swift     @main, instantiates the AppFeature Store
 │       ├── DesignSystem/   AppColors / AppFonts / AppSpacing — single source of truth
@@ -227,13 +228,15 @@ xcodebuild -workspace Pi.xcworkspace \
            build
 ```
 
-`Project.swift` is the source of truth. It includes Swift files under `Pi/Pi/`, tests under `Pi/PiTests/`, and the asset catalog. Regenerate after manifest or file changes. Generated `Pi.xcodeproj`, `Pi.xcworkspace`, and `Derived/` paths are ignored.
+`Project.swift` is the source of truth. It includes app files under `Pi/Pi/`, unit tests under `Pi/PiTests/`, UI tests under `Pi/PiUITests/`, and the asset catalog. Regenerate after manifest or file changes. Generated `Pi.xcodeproj`, `Pi.xcworkspace`, and `Derived/` paths are ignored.
 
 The pre-Tuist project remains available in Git history. Do not restore or edit it for new source, setting, or dependency changes.
 
 `Tuist/Package.swift` pins `ComposableArchitecture` 1.25.5, `KeychainSwift` 24.0.0, `gitdiff` 0.1.0, and `Aurora` 0.4.0. `Tuist/Package.resolved` preserves the existing transitive versions.
 
 The `PiTests` target uses Swift Testing. Run it with `xcodebuild -workspace Pi.xcworkspace -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test`.
+
+The `PiUITests` target uses XCTest UI automation under the `PiE2E` scheme. `scripts/run-e2e.mjs` starts a real Pi RPC process. It checks pairing, prompts, completion, background return, cold launch, and reconnect. It resets the selected Simulator keychain and removes stale `com.techzy.Pi` installs. `scripts/verify-linux-e2e.mjs` checks the extension in `node:22-bookworm` through Docker.
 
 ## Conventions
 

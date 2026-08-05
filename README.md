@@ -77,19 +77,21 @@ Background monitoring is best-effort. It stops if the user removes the app from
 the app switcher, the system expires the task, or the local connection cannot be
 restored. Pi continues running on the host computer. This local-only path does not use APNs.
 
-## Requirements
+## Compatibility
 
-- macOS or Linux with [Pi](https://pi.dev) installed; version 0.83.0 is currently tested
-- Node.js 22.19 or newer for extension development
-- Xcode 26.2 or newer
-- Tuist 4.202.6, pinned in `.mise.toml`
-- iOS 26.2 for the current app target
-- An iPhone and Pi host on the same trusted local network
+| Component | Preview baseline | Validation |
+|---|---|---|
+| Pi | 0.83.0 | Extension, protocol, and live-prompt E2E |
+| Node.js | 22.19 or newer | Ubuntu CI and Debian Bookworm E2E |
+| macOS host | Current macOS | Physical iPhone acceptance |
+| Linux host | Node 22 on Debian Bookworm | Docker protocol E2E; physical iPhone-to-Linux LAN testing remains open |
+| Xcode | 26.2 or newer | Generated workspace, Simulator, and signed device builds |
+| Tuist | 4.202.6 | Pinned in `.mise.toml` |
+| iOS | 26.2 or newer | Current deployment target |
 
-The extension builds and runs its tests on Ubuntu CI. Physical-device acceptance
-currently uses macOS. On Linux, allow inbound TCP traffic on port `3769`. If the
-printed URL selects a container or VPN interface, enter the host's LAN URL in the
-app manually.
+The iPhone and Pi host must share a trusted local network. On Linux, allow inbound TCP traffic on port `3769`.
+
+A container, VPN, or extra network interface can produce the wrong advertised address. If this happens, enter the host's LAN URL manually.
 
 ## Install the Pi extension
 
@@ -113,19 +115,33 @@ loads the local extension automatically.
 
 ## Build the iOS app
 
-Install the pinned Tuist version, resolve packages, and generate the workspace:
+The iOS app is source-only. You need an Apple ID that Xcode can use for device signing.
+
+Install the pinned tools and resolve Swift packages:
 
 ```bash
 mise trust
 mise install
 tuist install
+```
+
+Generate the workspace with your Apple team and a unique bundle identifier:
+
+```bash
+TUIST_PI_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+TUIST_PI_BUNDLE_IDENTIFIER=com.yourname.PiRemote \
 tuist generate --no-open
 open Pi.xcworkspace
 ```
 
-For a simulator build:
+In Xcode, select the `Pi` scheme and your iPhone. Press **Run** to build and install the app.
+
+If Xcode cannot sign the app, add your Apple ID under **Xcode → Settings → Accounts**. Then regenerate with that account's team identifier.
+
+For a Simulator build, signing variables are not required:
 
 ```bash
+tuist generate --no-open
 xcodebuild -workspace Pi.xcworkspace \
   -scheme Pi \
   -destination 'generic/platform=iOS Simulator' \
@@ -133,16 +149,9 @@ xcodebuild -workspace Pi.xcworkspace \
   build
 ```
 
-For physical-device generation, pass your Apple team and bundle identifier:
+The Simulator does not provide the VisionKit camera scanner. Use manual pairing with `/remote start --host 127.0.0.1`.
 
-```bash
-TUIST_PI_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
-TUIST_PI_BUNDLE_IDENTIFIER=com.yourname.Pi \
-tuist generate --no-open
-```
-
-`Project.swift` is the project source of truth. The pre-Tuist Xcode project
-remains available in Git history.
+`Project.swift` is the project source of truth. The pre-Tuist project remains available in Git history.
 
 ## Pair and connect
 
@@ -160,8 +169,12 @@ the Pi Remote pairing screen or with the iPhone Camera app. You can also enter
 the printed `ws://` URL and code, then tap **Connect & Pair**.
 
 The pairing code expires after two minutes and stops working after one success.
-LAN WebSockets are not encrypted, so do not use Pi Remote on public or untrusted
-Wi-Fi.
+
+The device token remains valid only while that Pi extension process lives. Exiting Pi or running `/reload` clears host trust and requires a new pairing.
+
+LAN WebSockets are not encrypted. A peer that can intercept local traffic can read session content or steal the bearer token.
+
+Use a trusted private network. Do not use guest or public Wi-Fi, port forwarding, or an Internet tunnel.
 
 For Simulator-only loopback access:
 
@@ -177,8 +190,9 @@ For Simulator-only loopback access:
 /remote rotate
 ```
 
-`/remote rotate` revokes trusted devices for the running Pi process and creates
-a new pairing window.
+`/remote stop` closes remote access without revoking trusted devices. `/remote rotate` revokes every device for the running Pi process.
+
+If the app reports an outdated extension, run `/reload` and then `/remote start`.
 
 ## Development
 
@@ -205,6 +219,20 @@ The extension test suite covers protocol decoding, authentication, tunnel
 lifecycle, event mapping, question recovery, run evidence, diff payloads, and
 WebSocket integration.
 
+Run the full iOS E2E test against a real Pi process and configured model:
+
+```bash
+scripts/run-e2e.mjs
+```
+
+If several matching Simulators exist, set `PI_E2E_SIMULATOR_ID`. Set `PI_E2E_MODEL` to use another configured model.
+
+Run Linux extension acceptance through Docker:
+
+```bash
+scripts/verify-linux-e2e.mjs
+```
+
 Use `examples/edit-diff-playground.ts` to exercise edit and write diff rendering
 from a connected phone without modifying application source.
 
@@ -225,6 +253,7 @@ scripts/export-app-icon.sh
 - [`docs/TUIST_MIGRATION.md`](docs/TUIST_MIGRATION.md): generated-project setup and migration decisions
 - [`PLAN.md`](PLAN.md): architecture and implementation status
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): development and contribution rules
+- [`PRIVACY.md`](PRIVACY.md): local data flow, storage, permissions, and deletion
 - [`SECURITY.md`](SECURITY.md): private vulnerability reporting
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md): remaining publication blockers
 

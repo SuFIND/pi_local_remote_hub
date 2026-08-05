@@ -11,7 +11,7 @@
 - Single-session supervision: structured phases, host/branch context, remote questions, Queue/Steer, and run completion evidence are implemented.
 - Remote reachability: `/remote start` binds to the Pi host's LAN interface. The iPhone and host must use the same trusted local network.
 - Public preview preparation: repository renamed to `pi-remote-ios`; licensing, package metadata, CI, contribution guidance, and release checks added. Public visibility remains pending.
-- iOS project generation: Tuist 4.202.6 manifests now define the app, tests, settings, resources, schemes, and pinned Swift packages. The pre-migration Xcode project remains as a rollback reference.
+- iOS project generation: Tuist 4.202.6 manifests define the app, tests, settings, resources, schemes, and pinned Swift packages. The pre-Tuist project remains in Git history.
 - Minimized run monitoring: user-started prompts submit an iOS 26 continued-processing task. The system presents its Live Activity while the app keeps the local WebSocket active, and generic local notifications report needs-input and completion events. APNs is not used.
 
 ## Goal
