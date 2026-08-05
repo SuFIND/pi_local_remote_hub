@@ -1,6 +1,6 @@
 {
   "name": "pi-remote-ios",
-  "version": "0.1.0",
+  "version": "0.1.0-preview.1",
   "description": "Pi extension and native iOS companion for controlling active Pi coding-agent sessions over a paired WebSocket.",
   "license": "MIT",
   "author": "Tornike Gomareli",
