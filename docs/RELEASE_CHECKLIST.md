@@ -58,7 +58,7 @@ npm publication is not required for the source preview. Before a later npm relea
 
 ## First public preview
 
-- [ ] Confirm the README installation form against established Pi extensions.
+- [x] Confirm the README installation form against established Pi extensions.
 - [ ] Make the repository public.
 - [ ] Test a clean GitHub installation.
 - [ ] Confirm the first public CI run passes.

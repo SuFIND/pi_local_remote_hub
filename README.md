@@ -95,10 +95,24 @@ A container, VPN, or extra network interface can produce the wrong advertised ad
 
 ## Install the Pi extension
 
-Install the Pi package directly from GitHub:
+Review the extension source before installation. Pi packages run with your full user permissions.
+
+Install the tagged preview for all projects:
 
 ```bash
-pi install git:github.com/tornikegomareli/pi-remote-ios
+pi install git:github.com/tornikegomareli/pi-remote-ios@v0.1.0-preview.1
+```
+
+For the current project only, add `-l`:
+
+```bash
+pi install -l git:github.com/tornikegomareli/pi-remote-ios@v0.1.0-preview.1
+```
+
+Try it for one Pi process without changing settings:
+
+```bash
+pi -e git:github.com/tornikegomareli/pi-remote-ios@v0.1.0-preview.1
 ```
 
 For development from a local checkout:
