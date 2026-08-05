@@ -122,6 +122,6 @@ tuist generate --no-open
 xcodebuild -workspace Pi.xcworkspace -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test
 ```
 
-`Project.swift` and `Tuist/Package.swift` are the iOS project source of truth. `Pi/Pi.xcodeproj` is retained only as a pre-migration fallback.
+`Project.swift` and `Tuist/Package.swift` are the iOS project source of truth. The pre-Tuist project remains available in Git history.
 
 For new protocol/auth behaviour, add or update a WebSocket integration test.

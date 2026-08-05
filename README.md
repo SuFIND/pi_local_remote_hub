@@ -141,8 +141,8 @@ TUIST_PI_BUNDLE_IDENTIFIER=com.yourname.Pi \
 tuist generate --no-open
 ```
 
-`Project.swift` is the project source of truth. `Pi/Pi.xcodeproj` remains as a
-pre-migration fallback.
+`Project.swift` is the project source of truth. The pre-Tuist Xcode project
+remains available in Git history.
 
 ## Pair and connect
 

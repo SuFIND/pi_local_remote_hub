@@ -9,7 +9,7 @@ DerivedData/
 /Pi.xcodeproj/
 /Pi.xcworkspace/
 /Tuist/.build/
-/.ralph/*.state.json
+/.ralph/
 *.xcresult
 
 .env

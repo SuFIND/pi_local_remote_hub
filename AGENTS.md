@@ -59,7 +59,6 @@ pi-remote-ios/
 │   └── API.md              short index
 │
 ├── Pi/                     iOS app sources and retained pre-Tuist project
-│   ├── Pi.xcodeproj/       pre-migration fallback; do not edit for new changes
 │   ├── PiTests/            Swift Testing coverage for pure app policies
 │   └── Pi/                 app sources (auto-included via synced root group)
 │       ├── PiApp.swift     @main, instantiates the AppFeature Store
@@ -230,7 +229,7 @@ xcodebuild -workspace Pi.xcworkspace \
 
 `Project.swift` is the source of truth. It includes Swift files under `Pi/Pi/`, tests under `Pi/PiTests/`, and the asset catalog. Regenerate after manifest or file changes. Generated `Pi.xcodeproj`, `Pi.xcworkspace`, and `Derived/` paths are ignored.
 
-`Pi/Pi.xcodeproj` remains only as a rollback reference during migration. Do not update it for new source, setting, or dependency changes.
+The pre-Tuist project remains available in Git history. Do not restore or edit it for new source, setting, or dependency changes.
 
 `Tuist/Package.swift` pins `ComposableArchitecture` 1.25.5, `KeychainSwift` 24.0.0, `gitdiff` 0.1.0, and `Aurora` 0.4.0. `Tuist/Package.resolved` preserves the existing transitive versions.
 
