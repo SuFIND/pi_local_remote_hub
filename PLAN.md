@@ -9,7 +9,7 @@
 - Architecture deepening pass: DeviceTrust, ProtocolDecoder, RemoteSession, RemoteControlRuntime, and RemoteEventStream are implemented.
 - Swift-facing protocol polish: server capabilities, documented close codes, stable `response.ok`, stable Pi event wrapper, and `state.changed` are implemented.
 - Single-session supervision: structured phases, host/branch context, remote questions, Queue/Steer, and run completion evidence are implemented.
-- Remote reachability: `/remote start` binds to the Mac's LAN interface. The iPhone and Mac must use the same trusted local network.
+- Remote reachability: `/remote start` binds to the Pi host's LAN interface. The iPhone and host must use the same trusted local network.
 - Public preview preparation: repository renamed to `pi-remote-ios`; licensing, package metadata, CI, contribution guidance, and release checks added. Public visibility remains pending.
 - iOS project generation: Tuist 4.202.6 manifests now define the app, tests, settings, resources, schemes, and pinned Swift packages. The pre-migration Xcode project remains as a rollback reference.
 - Minimized run monitoring: user-started prompts submit an iOS 26 continued-processing task. The system presents its Live Activity while the app keeps the local WebSocket active, and generic local notifications report needs-input and completion events. APNs is not used.
@@ -156,14 +156,14 @@ Why not SSE + REST for final architecture:
 
 ## Default exposure
 
-The default command binds to the Mac's local network interface:
+The default command binds to the Pi host's local network interface:
 
 ```txt
 /remote start
-# binds 0.0.0.0 and advertises the Mac's LAN address
+# binds 0.0.0.0 and advertises the host's LAN address
 ```
 
-Use this only when the iPhone and Mac share a trusted private network. Pi shows
+Use this only when the iPhone and Pi host share a trusted private network. Pi shows
 a warning when it starts the LAN listener.
 
 ## Threat model

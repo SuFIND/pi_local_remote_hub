@@ -5,8 +5,8 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 ## Current defaults
 
 - `/remote start` starts the server and enables pairing immediately.
-- Binds to `0.0.0.0` and advertises the Mac's LAN address by default.
-- The iPhone and Mac must use the same trusted local network.
+- Binds to `0.0.0.0` and advertises the Pi host's LAN address by default.
+- The iPhone and Pi host must use the same trusted local network.
 - WebSocket path is `/v1/ws`.
 - Message size is limited by the WebSocket server.
 - Browser `Origin` is checked when present.
@@ -40,10 +40,10 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 
 ## Local network transport
 
-- `/remote start` exposes `ws://<mac-lan-address>:3769/v1/ws` to the local network.
+- `/remote start` exposes `ws://<host-lan-address>:3769/v1/ws` to the local network.
 - Pairing codes and device tokens control access, but LAN WebSocket traffic is not encrypted.
 - Use Pi Remote only on a trusted private network.
-- `/remote start --host 127.0.0.1` limits access to the Simulator on the same Mac.
+- `/remote start --host 127.0.0.1` limits access to a client on the same host.
 
 ## Execution policy
 
@@ -59,7 +59,7 @@ A prompt sent from the iOS app can start an iOS 26 continued-processing task. Th
 
 Live Activity titles, phase subtitles, and local notifications contain only generic state such as working, needs input, completed, failed, or stopped. They never contain prompts, responses, tool output, commands, file paths, hostnames, branch names, tokens, or pairing codes.
 
-This path does not use APNs. Monitoring stops if iOS expires the task, the user removes the app from the app switcher, reconnect attempts fail, or the user disconnects. Stopping mobile monitoring does not stop Pi on the Mac.
+This path does not use APNs. Monitoring stops if iOS expires the task, the user removes the app from the app switcher, reconnect attempts fail, or the user disconnects. Stopping mobile monitoring does not stop Pi on the host computer.
 
 ## Do not
 

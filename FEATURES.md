@@ -4,16 +4,16 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 
 ## iOS app
 
-- Pairs with a running Pi session by using a six-digit code or pairing link.
+- Pairs with a running Pi session by scanning its QR code in the app or entering its host URL and six-digit code.
 - Stores the issued device token in Keychain for later authenticated reconnects.
 - Restores session state, transcript history, and pending questions after reconnecting.
 - Sends prompts to the active session.
 - Queues a prompt for later delivery or steers the current run while Pi is busy.
 - Aborts the current run and requests session compaction.
 - Tracks structured session phases, including running, queued, needs input, compacting, completed, and failed.
-- Tracks the connected Mac, working directory, Git branch, model, thinking level, and context usage when available.
+- Tracks the connected host, working directory, Git branch, model, thinking level, and context usage when available.
 - Lists available models and changes the active model and thinking level.
-- Lists Pi skills and invokes them in the active Mac session.
+- Lists Pi skills and invokes them in the active host session.
 - Receives assistant output and tool execution events as they occur.
 - Answers reconnect-safe questions raised by Pi.
 - Receives structured completion evidence, including command outcomes, tool failures, changed files, and line counts.
@@ -28,7 +28,7 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 
 - Adds the `/remote start`, `/remote stop`, `/remote status`, and `/remote rotate` commands to Pi.
 - Runs an authenticated WebSocket server for the active Pi process.
-- Binds to the local network by default and advertises the Mac’s LAN address.
+- Binds to the local network by default and advertises the host’s LAN address.
 - Generates an expiring pairing code and pairing link when remote control starts.
 - Issues a one-time device token after successful pairing.
 - Verifies returning devices by token and supports immediate trust rotation.
@@ -50,7 +50,7 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 ## Scope and security
 
 - Controls one active Pi session in the current Pi process.
-- Requires the iPhone and Mac to share a trusted local network.
+- Requires the iPhone and Pi host to share a trusted local network.
 - Uses authenticated but unencrypted `ws://` traffic on the local network.
 - Grants terminal-equivalent control to a paired device.
 - Does not add approval gates around Pi tools.

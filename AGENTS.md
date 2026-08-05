@@ -1,6 +1,6 @@
 # AGENTS.md — Project orientation
 
-This file is the entry point for any agent working on `pi-remote-ios`. Read it first. For deeper specs see `Systems.md`, `PLAN.md`, and `docs/`.
+This file is the entry point for any agent working on `pi-remote-ios`. Read it first. For deeper specs see `Systems.md`, `PLAN.md`, and `docs/`. `CLAUDE.md` is a symlink to this file, so Claude Code and other agents read identical instructions — edit only `AGENTS.md`.
 
 ## What this project is
 
@@ -13,7 +13,7 @@ User flow:
 
 ```
 $ pi                           # in repo root, loads extension via .pi/settings.json
-> /remote start                # starts ws server on the Mac's local network.
+> /remote start                # starts ws server on the Pi host's local network.
                                # Prints status, 6-digit code, and a QR code encoding a
                                # pi-remote://pair?url=...&code=... deep link.
 
@@ -22,7 +22,7 @@ iPhone: scan QR from Camera or in-app → auto-fills + auto-pairs
                                # iOS stores the token in Keychain for future reconnects
 
 iPhone: type prompt → Send     # round-trip through WebSocket → Pi → LLM → streaming back
-                               # requires the iPhone and Mac on the same trusted network
+                               # requires the iPhone and Pi host on the same trusted network
 ```
 
 `/remote start` means "running and ready to pair." There is intentionally no separate `/remote pair` command.
@@ -76,12 +76,13 @@ pi-remote-ios/
 │       └── Features/
 │           ├── AppFeature.swift       single TCA reducer that owns the session domain
 │           ├── AppRootView.swift      routes by AppFeature.State.screen
-│           ├── Pairing/               PairingView
+│           ├── Pairing/               PairingView + PairingScannerSheet
 │           ├── Dashboard/             DashboardView + DashboardHeader + Composer + Transcript/
 │           ├── Reconnect/             ReconnectView
 │           └── Settings/              SessionSettingsView + EnvelopeLogRow
 │
-├── AGENTS.md               agent rules + conventions (read after this file)
+├── AGENTS.md               this file — project orientation, rules, conventions
+├── CLAUDE.md               symlink → AGENTS.md (do not edit directly)
 ├── Systems.md              expanded system prompt for agents
 ├── PLAN.md                 architecture plan + phase status
 ├── DESIGNER_BRIEF.md       product/design brief for the iOS app
@@ -117,11 +118,12 @@ pi-remote-ios/
 - Stable `response.ok` shape: `{ ok, command, result }`.
 - State-changing commands emit `state.changed` after `response.ok`.
 - Pi events come through as `pi.<name>` with payload `{ source: "pi", name, data }`.
+- iOS requires `pi.agent_settled` in server capabilities and rejects stale loaded extensions with `/reload` guidance.
 - Close codes: `1001` server shutdown, `4000` heartbeat timeout, `4001` auth timeout.
 
 ### Security invariants
 
-- `/remote start` binds to `0.0.0.0` and advertises the Mac's LAN address.
+- `/remote start` binds to `0.0.0.0` and advertises the host's LAN address.
 - Unauthenticated clients can only receive `server.hello`, send `connection.ping`, or auth.
 - Pi event broadcasts go only to authenticated connections.
 - Pairing code expires after 2 minutes; 5 failed attempts disable the code; successful pair disables the code.
@@ -137,7 +139,7 @@ npm run typecheck     # tsc --noEmit
 npm test              # node --test test/*.test.mjs (66 tests)
 
 pi                    # from repo root, loads extension via .pi/settings.json
-> /remote start            # local network; iPhone and Mac must share trusted Wi-Fi
+> /remote start            # local network; iPhone and Pi host must share trusted Wi-Fi
                            # logs are silent by default — pass --logs to see
                            # connect/disconnect/auth events for debugging
 > /remote start --host 127.0.0.1  # Simulator-only loopback
@@ -156,7 +158,7 @@ We made an explicit decision to keep this as one reducer rather than per-feature
 
 State (`AppFeature.State`):
 - Form fields (bindable): `serverURL`, `pairingCode`, `deviceName`, `promptText`, `questionAnswerText`, `busyPromptDelivery`, `modelPickerPresented`, `settingsPresented`.
-- Session data: `status`, `hello`, `device`, `token`, `sessionState`, `pendingQuestion`, `lastRun`, `lastSeq`, `lastError`, `connectedAt`, `log`, `transcript`, `pendingPromptRequests`, `backgroundRunMonitoringID`, `backgroundRunPromptRequestID`, `copiedResponseID`, `availableModels`, `availableSkills`.
+- Session data: `status`, `hello`, `device`, `token`, `sessionState`, `pendingQuestion`, `lastRun`, `lastSeq`, `lastError`, `connectedAt`, `currentRunStartedAt`, `log`, `transcript`, `pendingPromptRequests`, `backgroundRunMonitoringID`, `backgroundRunPromptRequestID`, `copiedResponseID`, `availableModels`, `availableSkills`.
 - Reconnect bookkeeping: `reconnectAttempt`, `userInitiatedDisconnect`.
 - Derived: `isAuthenticated`, `canPair`, `screen` (used by `AppRootView` to pick `pairing | dashboard | reconnecting`).
 
@@ -166,7 +168,7 @@ Actions (named after the user action that produces them):
 - Effect responses: `backgroundRunMonitoringStarted`, `socketEvent(RemoteSocketClient.Event)`, `keepaliveTick`, `reconnectFire`, `sendSucceeded`, `sendFailed`.
 - Plus `binding(BindingAction<State>)` for form fields.
 
-`deepLinkOpened(URL)` is dispatched by `RootView`'s `.onOpenURL` when the OS routes a `pi-remote://pair?url=...&code=...` URI into the app (Camera-app scan, Safari, in-app scanner later). The reducer parses via `PairingDeepLink.parse`, fills `serverURL` + `pairingCode`, sets a transient `autoPairOnReady` flag, and runs `connectEffect`. `handleServerHello` consumes the flag and fires `auth.pair.request` automatically. Already-authenticated state is a no-op (the user must `forgetDevice` first to re-pair).
+`deepLinkOpened(URL)` is dispatched by `RootView`'s `.onOpenURL` when the OS routes a `pi-remote://pair?url=...&code=...` URI into the app (Camera-app scan, Safari, or the in-app scanner). The reducer parses via `PairingDeepLink.parse`, fills `serverURL` + `pairingCode`, sets a transient `autoPairOnReady` flag, and runs `connectEffect`. `handleServerHello` consumes the flag and fires `auth.pair.request` automatically. Already-authenticated state is a no-op (the user must `forgetDevice` first to re-pair).
 
 Cancel IDs: `socket`, `keepalive`, `reconnect`.
 
@@ -187,9 +189,9 @@ Injected via TCA's `@Dependency`:
 
 `DesignSystem/` is the single source of truth. Components reference these — no hardcoded hex/sizes:
 
-- `AppColors` — semantic tokens (`background`, `surface`, `surfaceElevated`, `text`/`textSecondary`/`textTertiary`, `cardBorder`, `accent`, `success`/`info`/`highlight`/`warning`/`error`/`thinking`).
-- `AppFonts` — `Font.app*` extension (`appBody`, `appTitle`, `appHeadline`, `appCallout`, `appCaption`, `appLabel`, `appMono*`).
-- `AppSpacing` — base scale `xs`/`s`/`m`/`l`/`xl`/`xxl` + role tokens (`cardPadding`, `cardRadius`, `buttonHeight`, `buttonRadius`, `pillRadius`).
+- `AppColors` — semantic tokens (`background`, `surface`, `surfaceElevated`, `codeBackground`, `scrim`, `text`/`textSecondary`/`textTertiary`, `cardBorder`, `accent`/`onAccent`, `success`/`info`/`highlight`/`warning`/`error`/`thinking`). Every token is **adaptive light/dark** via `UIColor(dynamicProvider:)`; values come from the Pi Remote design spec (dark bg `#0C0C0D`, green accent `#5ED6A1` dark / `#0B7A5C` light). The splash keeps a forced dark scheme; everything else follows the system appearance.
+- `AppFonts` — `Font.app*` extension (`appBody` 16, `appBodyBold`, `appTitle`, `appSheetTitle`, `appHeadline`, `appCallout`, `appCaption`, `appLabel`, `appMono*`).
+- `AppSpacing` — base scale `xs`/`s`/`m`/`l`/`xl`/`xxl` + role tokens (`cardPadding`, `cardRadius`, `toolCardRadius` 14, `bubbleRadius` 18, `sheetRadius` 32, `buttonHeight`, `buttonRadius`, `pillRadius`, `chipRadius` 10). Cards are flat surfaces — no stroke borders except input fields and focus rings.
 
 ### Components and shared UI
 
@@ -207,13 +209,13 @@ The app icon is the live-session mark in `Pi/Design/AppIcon-LiveSession.svg`. Ex
 
 - `AppFeature.swift` + `AppRootView.swift` — root reducer + screen router. A user-started prompt also starts best-effort continued processing so the WebSocket can monitor Pi after minimization. iOS provides a system Live Activity, and needs-input/completion events can create generic local notifications. Swiping the app away or system expiration stops monitoring. `AppRootView` runs a local "reconnect escalation" timer: while `screen == .reconnecting` it renders the slim `ReconnectBanner` over the live Dashboard for the first ~1.2s (warm bounces resolve invisibly); if the reconnect drags past that, or if the transcript is empty (cold-launch resume — nothing meaningful to render under a banner), it promotes to the full `ReconnectView` card overlay.
 - `Pairing/PairingView.swift` — host field, 6-digit code grid, status banner, pair CTA.
-- `Dashboard/DashboardView.swift` + `DashboardHeader.swift` + `ModelPickerView.swift` + `Composer.swift` + `QuestionCard.swift` + `SkillSuggestions.swift` + `Transcript/` — chat-first main screen with slash autocomplete, explicit Queue/Steer, blocking question cards, structured host/branch/phase context, and completion evidence. The header opens a searchable bottom-sheet model picker that hides unconfigured models. Busy sessions expose explicit Queue/Steer delivery and a separate Stop control. User prompts appear optimistically with sending, queued, sent, failed, and retry states. Consecutive tools collapse into an expandable activity group. Completed assistant responses expose Copy and Share actions. Automatic transcript following pauses when the user scrolls away and resumes through `JumpToLatestButton`. Aurora renders a full-screen edge glow while Pi works.
+- `Dashboard/DashboardView.swift` + `DashboardHeader.swift` + `ModelPickerView.swift` + `Composer.swift` + `RunShelf.swift` + `ContextBanner.swift` + `QuestionCard.swift` + `SkillSuggestions.swift` + `Transcript/` — chat-first main screen with slash autocomplete, explicit Queue/Steer, blocking question cards, and completion evidence. The header shows a π avatar with a phase dot (or needs-input badge), `project · branch` title, and a `Model · Thinking` subtitle that opens the searchable Model & Thinking sheet (models list + thinking-level chips, hides unconfigured models). While Pi works, `RunShelf` pins above the composer with a pulsing dot, live elapsed timer (`currentRunStartedAt` in reducer state), and the Stop control; `ContextBanner` appears at ≥80% context usage with an inline Compact action. Busy sessions expose explicit Queue/Steer delivery. User prompts appear optimistically with sending, queued, sent, failed, and retry states. Consecutive tools collapse into an expandable activity group. Completed assistant responses expose Copy and Share actions. Automatic transcript following pauses when the user scrolls away and resumes through `JumpToLatestButton`. Aurora renders a full-screen edge glow while Pi works.
 - `Reconnect/ReconnectView.swift` — overlay during auto-reconnect.
-- `Settings/SessionSettingsView.swift` + `EnvelopeLogRow.swift` — diagnostic sheet.
+- `Settings/SessionSettingsView.swift` + `EnvelopeLogRow.swift` — the Session Inspector sheet: connection/session/trust diagnostics, a plain-language security section ("terminal-equivalent control … authenticated but not encrypted"), controls, and the envelope log.
 
 ### Visual direction
 
-"Native iOS dark with terminal whisper" (Variant A from the design package): pure black background, `#1C1C1E` surface, white accent, SF for body, SF Mono for paths/codes/timestamps. SF Symbols cover all icons.
+The "Pi Remote iOS Design Spec" (claude.ai/design project): adaptive light/dark, near-black `#0C0C0D` background with `#19191B`/`#242427` surfaces in dark, white with `#F4F4F2`/`#ECECEA` in light, green accent (`#5ED6A1` dark / `#0B7A5C` light), SF for body, SF Mono for paths/codes/timestamps. SF Symbols cover all icons. Chat-style transcript: user prompts in `surface` bubbles (18pt radius, 4pt tail corner), assistant prose directly on the canvas, tool events in flat 14pt-radius cards. The run shelf above the composer is the only "running" indicator chrome and owns the Stop control. System-visible surfaces (notifications, Live Activity) stay generic — never a prompt, path, branch, or file name.
 
 ### Building
 
@@ -256,13 +258,12 @@ The `PiTests` target uses Swift Testing. Run it with `xcodebuild -workspace Pi.x
 
 When making important changes:
 
-1. Update `CLAUDE.md` (this file).
-2. Update `AGENTS.md` if conventions change.
-3. Update `PLAN.md` if phase/architecture changes.
-4. Update `docs/PROTOCOL.md` if wire messages change.
-5. Update `docs/SECURITY.md` if security assumptions change.
-6. Update `docs/SWIFT_CLIENT_NOTES.md` if iOS expectations change.
-7. Update tests for protocol guarantees.
+1. Update `AGENTS.md` (this file; `CLAUDE.md` is a symlink to it).
+2. Update `PLAN.md` if phase/architecture changes.
+3. Update `docs/PROTOCOL.md` if wire messages change.
+4. Update `docs/SECURITY.md` if security assumptions change.
+5. Update `docs/SWIFT_CLIENT_NOTES.md` if iOS expectations change.
+6. Update tests for protocol guarantees.
 
 ## Useful entry points
 

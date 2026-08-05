@@ -206,7 +206,7 @@ The `state` object carried by `state.snapshot`, `state.changed`, `auth.*.success
 
 `phase` is one of `idle`, `running`, `queued`, `compacting`, `needsInput`, `completed`, or `failed`. Pi events drive this state. `agent_settled`, rather than `agent_end`, marks the final transition because automatic retries, compaction, or queued continuations can follow `agent_end`.
 
-`host` is the Mac hostname. `branch` is best-effort and is omitted outside a Git worktree. `lastRun` is the latest bounded completion summary and remains available across client reconnects while the Pi extension process stays alive.
+`host` is the Pi host's hostname. `branch` is best-effort and is omitted outside a Git worktree. `lastRun` is the latest bounded completion summary and remains available across client reconnects while the Pi extension process stays alive.
 
 Pi lifecycle and question transitions also emit `state.changed`. Their reasons are the source event name (`before_agent_start`, `agent_start`, `agent_settled`, `session_before_compact`, `session_compact`) or `questionOpened` / `questionResolved`.
 

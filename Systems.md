@@ -59,7 +59,7 @@ Do not put source under `extensions/`. If conventional Pi discovery is needed, i
 
 Default to trusted local-network use:
 
-- bind to the Mac's LAN interface for `/remote start`;
+- bind to the Pi host's LAN interface for `/remote start`;
 - do not expose the listener to the public Internet;
 - never add unauthenticated command execution or Pi event broadcast;
 - avoid logging secrets and large prompt/tool payloads;

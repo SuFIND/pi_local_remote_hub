@@ -39,7 +39,7 @@ daemon or manage multiple sessions.
 - Abort and compact the active session.
 - Change the active model and thinking level.
 - Discover and invoke Pi skills through slash autocomplete.
-- Show Mac, project, branch, model, and structured session status.
+- Show host, project, branch, model, and structured session status.
 - Answer blocking Pi questions through first-class mobile cards.
 - Show an Aurora edge glow while Pi is working.
 - Stream assistant output and grouped tool execution events.
@@ -49,7 +49,7 @@ daemon or manage multiple sessions.
 - Receive privacy-safe local alerts when Pi needs input or finishes.
 - Summarize commands, failures, and changed files after Pi settles.
 - Render edit and write diffs natively on iOS.
-- Connect an iPhone and Mac on the same local network.
+- Connect an iPhone and Pi host on the same local network.
 
 ## How it works
 
@@ -75,16 +75,21 @@ paths, or credentials.
 
 Background monitoring is best-effort. It stops if the user removes the app from
 the app switcher, the system expires the task, or the local connection cannot be
-restored. Pi continues running on the Mac. This local-only path does not use APNs.
+restored. Pi continues running on the host computer. This local-only path does not use APNs.
 
 ## Requirements
 
-- macOS with [Pi](https://pi.dev) installed; version 0.83.0 is currently tested
+- macOS or Linux with [Pi](https://pi.dev) installed; version 0.83.0 is currently tested
 - Node.js 22.19 or newer for extension development
 - Xcode 26.2 or newer
 - Tuist 4.202.6, pinned in `.mise.toml`
 - iOS 26.2 for the current app target
-- An iPhone and Mac on the same trusted local network
+- An iPhone and Pi host on the same trusted local network
+
+The extension builds and runs its tests on Ubuntu CI. Physical-device acceptance
+currently uses macOS. On Linux, allow inbound TCP traffic on port `3769`. If the
+printed URL selects a container or VPN interface, enter the host's LAN URL in the
+app manually.
 
 ## Install the Pi extension
 
@@ -147,12 +152,12 @@ Start Pi, then run:
 /remote start
 ```
 
-Pi binds a WebSocket server to the Mac's local network interface. It prints the
-Mac's LAN URL, a short-lived pairing code, and a QR deep link.
+Pi binds a WebSocket server to the host's local network interface. It prints the
+host's LAN URL, a short-lived pairing code, and a QR deep link.
 
-Keep the iPhone and Mac on the same trusted network. Scan the QR code with the
-iPhone Camera app, then tap the Pi Remote banner. You can also enter the printed
-`ws://` URL and code manually.
+Keep the iPhone and Pi host on the same trusted network. Scan the QR code from
+the Pi Remote pairing screen or with the iPhone Camera app. You can also enter
+the printed `ws://` URL and code, then tap **Connect & Pair**.
 
 The pairing code expires after two minutes and stops working after one success.
 LAN WebSockets are not encrypted, so do not use Pi Remote on public or untrusted
