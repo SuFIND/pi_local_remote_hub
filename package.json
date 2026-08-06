@@ -23,6 +23,7 @@
   ],
   "files": [
     "extension",
+    "docs/assets/pi-remote-hero.webp",
     "docs/PROTOCOL.md",
     "docs/SECURITY.md",
     "LICENSE",
@@ -43,7 +44,7 @@
     "extensions": [
       "./extension/index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/tornikegomareli/pi-remote-ios/main/Pi/Pi/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+    "image": "https://raw.githubusercontent.com/tornikegomareli/pi-remote-ios/main/docs/assets/pi-remote-hero.webp"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

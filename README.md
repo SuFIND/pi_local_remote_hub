@@ -1,7 +1,7 @@
 # Pi Remote for iOS
 
 <p align="center">
-  <img src="./Pi/Pi/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="128" alt="Pi Remote app icon">
+  <img src="./docs/assets/pi-remote-hero.webp" width="100%" alt="Pi Remote controlling the same live session in Ghostty and the iPhone Simulator">
 </p>
 
 [![CI](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml/badge.svg)](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml)
