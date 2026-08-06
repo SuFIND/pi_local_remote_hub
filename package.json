@@ -23,7 +23,7 @@
   ],
   "files": [
     "extension",
-    "docs/assets/pi-remote-hero.webp",
+    "docs/assets",
     "docs/PROTOCOL.md",
     "docs/SECURITY.md",
     "LICENSE",

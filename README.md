@@ -29,6 +29,35 @@ iOS app currently requires an Xcode build from source.
 It controls the active interactive Pi session. It does not run a background Pi
 daemon or manage multiple sessions.
 
+## iOS app
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="./docs/assets/pi-remote-aurora.webp" width="100%" alt="Aurora Glow around an active Pi run">
+      <br><strong>Aurora Glow</strong><br>
+      The screen edge and run shelf show active work.
+    </td>
+    <td align="center" width="50%">
+      <img src="./docs/assets/pi-remote-skills.webp" width="100%" alt="Pi skill autocomplete in the iOS composer">
+      <br><strong>Skills</strong><br>
+      Search host-side skills from the composer.
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="./docs/assets/pi-remote-models.webp" width="100%" alt="Model and thinking-level controls">
+      <br><strong>Model &amp; Thinking</strong><br>
+      Change the active model and thinking level.
+    </td>
+    <td align="center" width="50%">
+      <img src="./docs/assets/pi-remote-queue.webp" width="100%" alt="A queued follow-up while Pi is working">
+      <br><strong>Queued follow-up</strong><br>
+      Add a message without interrupting the current run.
+    </td>
+  </tr>
+</table>
+
 ## What it can do
 
 - Pair through a six-digit code or QR deep link.
