@@ -1,7 +1,7 @@
 # Pi Remote for iOS
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/tornikegomareli/pi-remote-ios/main/Pi/Pi/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="128" alt="Pi Remote app icon">
+  <img src="./Pi/Pi/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="128" alt="Pi Remote app icon">
 </p>
 
 [![CI](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml/badge.svg)](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml)
