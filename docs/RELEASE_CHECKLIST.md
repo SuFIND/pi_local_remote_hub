@@ -51,7 +51,7 @@ npm publication is not required for the source preview. Before a later npm relea
 - [x] Keep iOS distribution source-only; no App Store release is planned.
 - [x] Preserve third-party notices in the source distribution.
 - [x] Generate the iOS app and test targets from pinned Tuist manifests.
-- [x] Run 43 unit tests on an iOS Simulator.
+- [x] Run 44 unit tests on an iOS Simulator.
 - [x] Run live E2E for manual pairing, QR deep link, prompt completion, background return, token reconnect, and network interruption.
 - [x] Build, install, and launch the signed app on a physical iPhone.
 - [x] Run Linux extension pairing and token reconnect through Docker.
