@@ -28,6 +28,24 @@ export class ConnectionRegistry {
 		}
 	}
 
+	/** Close every connection authenticated as `deviceId`; returns how many. */
+	closeDevice(deviceId: string, code: number = SERVER_CLOSE_CODES.DEVICE_REVOKED.code, reason: string = SERVER_CLOSE_CODES.DEVICE_REVOKED.reason): number {
+		let closed = 0;
+		for (const connection of this.connections.values()) {
+			if (connection.deviceId() !== deviceId) continue;
+			connection.close(code, reason);
+			closed += 1;
+		}
+		return closed;
+	}
+
+	/** Close every authenticated connection (after "revoke all"). */
+	closeAuthenticated(code: number = SERVER_CLOSE_CODES.DEVICE_REVOKED.code, reason: string = SERVER_CLOSE_CODES.DEVICE_REVOKED.reason): void {
+		for (const connection of this.connections.values()) {
+			if (connection.isAuthenticated()) connection.close(code, reason);
+		}
+	}
+
 	closeAll(code = SERVER_CLOSE_CODES.SERVER_SHUTDOWN.code, reason = SERVER_CLOSE_CODES.SERVER_SHUTDOWN.reason): void {
 		for (const connection of this.connections.values()) connection.close(code, reason);
 		this.connections.clear();

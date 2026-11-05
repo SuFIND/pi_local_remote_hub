@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
 import jitiFactory from "jiti";
@@ -9,11 +13,31 @@ const { DEFAULT_REMOTE_CONFIG } = jiti("../extension/config.ts");
 const { createLogger } = jiti("../extension/logging/logger.ts");
 const { QuestionBroker } = jiti("../extension/questions/QuestionBroker.ts");
 const { RemoteServer } = jiti("../extension/server/RemoteServer.ts");
+const { FileTrustStore } = jiti("../extension/auth/TrustStore.ts");
+const { createHostIdentity } = jiti("../extension/identity/HostIdentity.ts");
 
-function createClient(url) {
-	const ws = new WebSocket(url);
+const TEST_IDENTITY = createHostIdentity();
+const TEST_CONFIG = { ...DEFAULT_REMOTE_CONFIG, host: "127.0.0.1", port: 0 };
+
+/**
+ * Mirrors the iOS client: dial `wss://…` with the `#fp=` fragment stripped,
+ * skip CA validation, and pin the SHA-256 of the leaf certificate DER.
+ */
+function createClient(connectUrl) {
+	const url = new URL(connectUrl);
+	const expectedFingerprint = new URLSearchParams(url.hash.slice(1)).get("fp");
+	url.hash = "";
+	const ws = new WebSocket(url.toString(), { rejectUnauthorized: false });
 	const queue = [];
 	const waiters = [];
+	const closed = new Promise((resolve) => ws.on("close", (code, reason) => resolve({ code, reason: reason.toString() })));
+	let pinOk = false;
+	ws.on("upgrade", (response) => {
+		const der = response.socket.getPeerCertificate(false).raw;
+		const actual = createHash("sha256").update(der).digest("base64url");
+		pinOk = actual === expectedFingerprint;
+		if (!pinOk) ws.terminate();
+	});
 
 	ws.on("message", (data) => {
 		const message = JSON.parse(data.toString());
@@ -28,6 +52,10 @@ function createClient(url) {
 
 	return {
 		ws,
+		closed,
+		get pinOk() {
+			return pinOk;
+		},
 		read(timeoutMs = 1_000) {
 			if (queue.length > 0) return Promise.resolve(queue.shift());
 			return new Promise((resolve, reject) => {
@@ -60,8 +88,8 @@ function send(client, value) {
 	client.ws.send(JSON.stringify({ protocolVersion: 1, ...value }));
 }
 
-async function withServer(testBody) {
-	const deviceTrust = new DeviceTrust();
+async function withServer(testBody, options = {}) {
+	const deviceTrust = options.deviceTrust ?? new DeviceTrust();
 	const prompts = [];
 	const adapter = {
 		getState: () => ({ isIdle: true, cwd: "/tmp/pi-remote-test" }),
@@ -81,13 +109,14 @@ async function withServer(testBody) {
 	});
 	server = new RemoteServer({
 		config: DEFAULT_REMOTE_CONFIG,
-		logger: createLogger("test", "error"),
+		logger: createLogger("test", "silent"),
 		adapter,
 		deviceTrust,
+		identity: options.identity ?? TEST_IDENTITY,
 		questions,
 		getState: () => adapter.getState(),
 	});
-	await server.start({ ...DEFAULT_REMOTE_CONFIG, port: 0 });
+	await server.start({ ...TEST_CONFIG, ...options.config });
 	try {
 		await testBody({ server, deviceTrust, adapter, prompts, questions });
 	} finally {
@@ -100,6 +129,7 @@ async function pairClient(server, deviceTrust) {
 	const client = createClient(server.getWebSocketUrl());
 	const hello = await client.read();
 	assert.equal(hello.type, "server.hello");
+	assert.equal(client.pinOk, true);
 	assert.equal(hello.payload.auth.pairingAvailable, true);
 	assert.equal(hello.payload.capabilities.features.sequenceNumbers, true);
 	assert.equal(hello.payload.capabilities.features.stableOkEnvelope, true);
@@ -247,4 +277,101 @@ test("WebSocket broadcasts Pi events only to authenticated clients", async () =>
 		unauthenticated.close();
 		authenticated.close();
 	});
+});
+
+test("WebSocket URL is wss:// and carries the certificate pin", async () => {
+	await withServer(async ({ server }) => {
+		const url = new URL(server.getWebSocketUrl());
+		assert.equal(url.protocol, "wss:");
+		assert.equal(url.hostname, "127.0.0.1");
+		assert.equal(url.pathname, "/v1/ws");
+		assert.equal(url.hash, `#fp=${TEST_IDENTITY.fingerprint}`);
+		assert.equal(server.getDisplayWebSocketUrl(), `wss://127.0.0.1:${url.port}/v1/ws`);
+		assert.match(server.getUrl(), /^https:\/\/127\.0\.0\.1:\d+$/);
+	});
+});
+
+test("WebSocket refuses plaintext ws:// clients", async () => {
+	await withServer(async ({ server }) => {
+		const url = new URL(server.getWebSocketUrl());
+		const ws = new WebSocket(`ws://127.0.0.1:${url.port}/v1/ws`);
+		const outcome = await new Promise((resolve) => {
+			ws.on("message", () => resolve("message"));
+			ws.on("error", () => resolve("error"));
+			ws.on("close", () => resolve("closed"));
+		});
+		assert.notEqual(outcome, "message");
+		ws.terminate();
+	});
+});
+
+test("A client pinning a different fingerprint rejects the server", async () => {
+	await withServer(async ({ server }) => {
+		const other = createHostIdentity();
+		const url = new URL(server.getWebSocketUrl());
+		url.hash = `fp=${other.fingerprint}`;
+		const client = createClient(url.toString());
+		await client.closed;
+		assert.equal(client.pinOk, false);
+	});
+});
+
+test("Revoking a device closes its live socket and rejects its token", async () => {
+	await withServer(async ({ server, deviceTrust }) => {
+		const { client, token } = await pairClient(server, deviceTrust);
+		const [device] = deviceTrust.listTrustedDevices();
+		const result = deviceTrust.revokeDevice(device.id.slice(0, 6));
+		assert.equal(result.ok, true);
+		assert.equal(server.disconnectDevice(device.id), 1);
+		assert.equal((await client.closed).code, 4003);
+
+		const reconnect = createClient(server.getWebSocketUrl());
+		assert.equal((await reconnect.read()).type, "server.hello");
+		send(reconnect, { id: "token_revoked", type: "auth.token", payload: { token } });
+		const rejected = await reconnect.read();
+		assert.equal(rejected.type, "response.error");
+		assert.equal(rejected.payload.code, "UNAUTHORIZED");
+		reconnect.close();
+	});
+});
+
+test("Paired devices survive a restart with a file trust store, and revocation elsewhere drops the socket", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-remote-trust-"));
+	const trustPath = join(dir, "trusted-devices.json");
+	try {
+		let token;
+		await withServer(
+			async ({ server, deviceTrust }) => {
+				({ token } = await pairClient(server, deviceTrust).then(({ client, token }) => {
+					client.close();
+					return { token };
+				}));
+			},
+			{ deviceTrust: new DeviceTrust({ store: new FileTrustStore(trustPath) }) },
+		);
+
+		// "Restart": a brand-new DeviceTrust + server reading the same files.
+		await withServer(
+			async ({ server, deviceTrust }) => {
+				const client = createClient(server.getWebSocketUrl());
+				assert.equal((await client.read()).type, "server.hello");
+				send(client, { id: "token_after_restart", type: "auth.token", payload: { token } });
+				assert.equal((await client.read()).type, "auth.token.success");
+				assert.equal((await client.read()).type, "state.snapshot");
+
+				// Another Pi process (its own DeviceTrust on the same file) revokes it;
+				// this server notices on the next heartbeat.
+				const elsewhere = new DeviceTrust({ store: new FileTrustStore(trustPath) });
+				const [device] = deviceTrust.listTrustedDevices();
+				assert.equal(elsewhere.revokeDevice(device.id).ok, true);
+				assert.equal((await client.closed).code, 4003);
+			},
+			{
+				deviceTrust: new DeviceTrust({ store: new FileTrustStore(trustPath) }),
+				config: { heartbeatIntervalMs: 50 },
+			},
+		);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

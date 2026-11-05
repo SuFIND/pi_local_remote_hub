@@ -1,11 +1,14 @@
 import { randomBytes } from "node:crypto";
-import http, { type IncomingMessage } from "node:http";
-import { networkInterfaces } from "node:os";
+import type { IncomingMessage } from "node:http";
+import https from "node:https";
+import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import type { DeviceTrust } from "../auth/DeviceTrust.js";
 import type { RemoteConfig } from "../config.js";
+import type { HostIdentity } from "../identity/HostIdentity.js";
 import type { Logger } from "../logging/logger.js";
+import { isAllowedPeerAddress, selectLanAddress } from "../net/lanAddress.js";
 import type { PiRemoteAdapter } from "../pi/PiRemoteAdapter.js";
 import type { RemoteStateSnapshot } from "../pi/stateSnapshot.js";
 import { QuestionBroker } from "../questions/QuestionBroker.js";
@@ -20,6 +23,8 @@ export type RemoteServerOptions = {
 	logger: Logger;
 	adapter: PiRemoteAdapter;
 	deviceTrust: DeviceTrust;
+	/** TLS certificate + key; clients pin `identity.fingerprint`. */
+	identity: HostIdentity | (() => HostIdentity);
 	getState: () => RemoteStateSnapshot;
 	questions?: QuestionBroker;
 };
@@ -29,10 +34,12 @@ export class RemoteServer {
 	private readonly logger: Logger;
 	private readonly adapter: PiRemoteAdapter;
 	private readonly deviceTrust: DeviceTrust;
+	private readonly identitySource: HostIdentity | (() => HostIdentity);
+	private identity?: HostIdentity;
 	private readonly getState: () => RemoteStateSnapshot;
 	private readonly questions: QuestionBroker;
 	private readonly registry = new ConnectionRegistry();
-	private server?: http.Server;
+	private server?: https.Server;
 	private wss?: WebSocketServer;
 	private seq = 0;
 
@@ -41,6 +48,7 @@ export class RemoteServer {
 		this.logger = options.logger;
 		this.adapter = options.adapter;
 		this.deviceTrust = options.deviceTrust;
+		this.identitySource = options.identity;
 		this.getState = options.getState;
 		this.questions = options.questions ?? new QuestionBroker();
 	}
@@ -57,17 +65,54 @@ export class RemoteServer {
 		return this.config;
 	}
 
-	getUrl(): string | undefined {
-		const address = this.server?.address();
-		if (!address || typeof address === "string") return undefined;
-		const displayHost = this.config.host === "0.0.0.0" ? getLanAddress() ?? "localhost" : this.config.host;
-		return `http://${displayHost}:${address.port}`;
+	/** Loaded on first use so Pi processes that never start the server never touch the key. */
+	getIdentity(): HostIdentity {
+		this.identity ??= typeof this.identitySource === "function" ? this.identitySource() : this.identitySource;
+		return this.identity;
 	}
 
-	getWebSocketUrl(): string | undefined {
+	/** Host clients should dial: the bound address, or the LAN IP for a wildcard bind. */
+	getAdvertisedHost(): string | undefined {
+		if (!this.isRunning()) return undefined;
+		const wildcard = this.config.host === "0.0.0.0" || this.config.host === "::";
+		return wildcard ? selectLanAddress() ?? "localhost" : this.config.host;
+	}
+
+	getPort(): number | undefined {
+		const address = this.server?.address();
+		return address && typeof address !== "string" ? address.port : undefined;
+	}
+
+	getUrl(): string | undefined {
+		const host = this.getAdvertisedHost();
+		const port = this.getPort();
+		if (!host || port === undefined) return undefined;
+		return `https://${formatHost(host)}:${port}`;
+	}
+
+	/** `wss://…/v1/ws` without the pin — for display. */
+	getDisplayWebSocketUrl(): string | undefined {
 		const base = this.getUrl();
-		if (!base) return undefined;
-		return `${base.replace(/^http:/, "ws:")}${this.config.webSocketPath}`;
+		return base ? `${base.replace(/^https:/, "wss:")}${this.config.webSocketPath}` : undefined;
+	}
+
+	/**
+	 * The connect string handed to clients: `wss://host:port/v1/ws#fp=<pin>`.
+	 * The fragment never goes on the wire; clients strip it and pin the
+	 * certificate SHA-256 it names.
+	 */
+	getWebSocketUrl(): string | undefined {
+		const base = this.getDisplayWebSocketUrl();
+		return base ? `${base}#fp=${this.getIdentity().fingerprint}` : undefined;
+	}
+
+	/** Drop live sockets of a revoked device; returns how many were closed. */
+	disconnectDevice(deviceId: string): number {
+		return this.registry.closeDevice(deviceId);
+	}
+
+	disconnectAuthenticated(): void {
+		this.registry.closeAuthenticated();
 	}
 
 	async start(config: RemoteConfig): Promise<void> {
@@ -75,7 +120,8 @@ export class RemoteServer {
 		this.config = config;
 		this.wss = new WebSocketServer({ noServer: true, maxPayload: this.config.maxFrameBytes });
 
-		this.server = http.createServer((req, res) => {
+		const identity = this.getIdentity();
+		this.server = https.createServer({ key: identity.keyPem, cert: identity.certPem, minVersion: "TLSv1.2" }, (req, res) => {
 			const handled = handleHttpRoute(req, res, {
 				config: this.config,
 				connections: this.registry.size,
@@ -88,17 +134,34 @@ export class RemoteServer {
 		});
 
 		this.server.on("upgrade", (req, socket, head) => this.handleUpgrade(req, socket, head));
-
-		await new Promise<void>((resolve, reject) => {
-			const server = this.server!;
-			server.once("error", reject);
-			server.listen(this.config.port, this.config.host, () => {
-				server.off("error", reject);
-				resolve();
-			});
+		// Defense in depth on top of the LAN-only bind: never complete a TLS
+		// handshake with a peer outside loopback / private ranges.
+		this.server.on("connection", (socket: Socket) => {
+			if (!isAllowedPeerAddress(socket.remoteAddress)) {
+				this.logger.warn("remote_peer_rejected", { remoteAddress: socket.remoteAddress });
+				socket.destroy();
+			}
 		});
+		this.server.on("tlsClientError", (error) => this.logger.debug("tls_client_error", { error: error.message }));
 
-		this.logger.info("remote_server_started", { host: this.config.host, port: this.config.port, wsPath: this.config.webSocketPath });
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const server = this.server!;
+				server.once("error", reject);
+				server.listen(this.config.port, this.config.host, () => {
+					server.off("error", reject);
+					resolve();
+				});
+			});
+		} catch (error) {
+			// Leave the instance restartable (e.g. EADDRINUSE → retry another port).
+			this.server = undefined;
+			this.wss?.close();
+			this.wss = undefined;
+			throw error;
+		}
+
+		this.logger.info("remote_server_started", { host: this.config.host, port: this.getPort(), wsPath: this.config.webSocketPath });
 	}
 
 	async stop(): Promise<void> {
@@ -153,6 +216,7 @@ export class RemoteServer {
 				logger: this.logger,
 				session,
 				isPairingAvailable: () => this.deviceTrust.isPairingAvailable(),
+				isDeviceTrusted: (deviceId) => this.deviceTrust.isTrustedDevice(deviceId),
 				send: (target, type, payload, requestId) => target.send(createServerEnvelope(this.nextSeq(), type, payload, requestId)),
 				onClose: (target) => {
 					this.registry.remove(target.id);
@@ -189,11 +253,6 @@ function rejectUpgrade(socket: Duplex, status: number, message: string): void {
 	socket.destroy();
 }
 
-function getLanAddress(): string | undefined {
-	for (const entries of Object.values(networkInterfaces())) {
-		for (const entry of entries ?? []) {
-			if (entry.family === "IPv4" && !entry.internal) return entry.address;
-		}
-	}
-	return undefined;
+function formatHost(host: string): string {
+	return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }

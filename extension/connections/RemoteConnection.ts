@@ -15,6 +15,8 @@ export type RemoteConnectionOptions = {
 	logger: Logger;
 	session: RemoteSession;
 	isPairingAvailable: () => boolean;
+	/** Re-checked on every heartbeat so a revoked device is dropped. */
+	isDeviceTrusted: (deviceId: string) => boolean;
 	send: (connection: RemoteConnection, type: string, payload?: unknown, requestId?: string) => void;
 	onClose: (connection: RemoteConnection) => void;
 };
@@ -27,6 +29,7 @@ export class RemoteConnection {
 	private readonly logger: Logger;
 	private readonly session: RemoteSession;
 	private readonly isPairingAvailable: () => boolean;
+	private readonly isDeviceTrusted: (deviceId: string) => boolean;
 	private readonly sendFromServer: RemoteConnectionOptions["send"];
 	private readonly onClose: RemoteConnectionOptions["onClose"];
 	private authTimeout?: NodeJS.Timeout;
@@ -41,6 +44,7 @@ export class RemoteConnection {
 		this.logger = options.logger;
 		this.session = options.session;
 		this.isPairingAvailable = options.isPairingAvailable;
+		this.isDeviceTrusted = options.isDeviceTrusted;
 		this.sendFromServer = options.send;
 		this.onClose = options.onClose;
 	}
@@ -74,6 +78,10 @@ export class RemoteConnection {
 
 	isAuthenticated(): boolean {
 		return this.session.isAuthenticated();
+	}
+
+	deviceId(): string | undefined {
+		return this.session.authenticatedDeviceId();
 	}
 
 	send(envelope: ServerEnvelope): void {
@@ -115,6 +123,12 @@ export class RemoteConnection {
 	private checkHeartbeat(): void {
 		if (Date.now() - this.lastSeenAt > this.config.clientTimeoutMs) {
 			this.close(SERVER_CLOSE_CODES.HEARTBEAT_TIMEOUT.code, SERVER_CLOSE_CODES.HEARTBEAT_TIMEOUT.reason);
+			return;
+		}
+
+		const deviceId = this.deviceId();
+		if (deviceId && !this.isDeviceTrusted(deviceId)) {
+			this.close(SERVER_CLOSE_CODES.DEVICE_REVOKED.code, SERVER_CLOSE_CODES.DEVICE_REVOKED.reason);
 			return;
 		}
 

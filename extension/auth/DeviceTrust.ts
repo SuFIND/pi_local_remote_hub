@@ -6,6 +6,7 @@ import {
 	hashToken,
 	normalizePairingCode,
 } from "./crypto.js";
+import { MemoryTrustStore, type TrustFile, type TrustStore, type TrustedDeviceRecord } from "./TrustStore.js";
 
 // MARK: - Public types
 
@@ -30,6 +31,15 @@ export type PairingStartOptions = {
 	maxAttempts?: number;
 };
 
+export type RevokeDeviceResult =
+	| { ok: true; device: TrustedDevice }
+	| { ok: false; code: "NOT_FOUND" | "AMBIGUOUS"; message: string };
+
+export type DeviceTrustOptions = {
+	/** Where trusted devices live. Defaults to process memory. */
+	store?: TrustStore;
+};
+
 export type TrustedDevice = {
 	id: string;
 	name: string;
@@ -45,8 +55,6 @@ const DEFAULT_MAX_PAIRING_ATTEMPTS = 5;
 const MAX_TOKEN_LENGTH = 512;
 const MAX_DEVICE_NAME_LENGTH = 80;
 
-type TrustedDeviceRecord = TrustedDevice & { tokenHash: string };
-
 type PairingValidation =
 	| { ok: true }
 	| { ok: false; code: "PAIRING_DISABLED" | "PAIRING_EXPIRED" | "PAIRING_ATTEMPTS_EXCEEDED" | "UNAUTHORIZED"; message: string };
@@ -58,11 +66,17 @@ type PairingValidation =
  * Internals (`#pairing`, `#tokens`) are not exported. They were once two
  * separate `PairingManager` and `TokenStore` classes; the fold matches the
  * file count to the domain count (one), so a reader chasing "how does
- * pairing work?" lands here and stops here.
+ * pairing work?" lands here and stops here. Persistence sits behind the
+ * `TrustStore` seam (`FileTrustStore` in production): the pairing window is
+ * always in memory, trusted devices survive restarts.
  */
 export class DeviceTrust {
 	readonly #pairing = new PairingState();
-	readonly #tokens = new TokenStoreState();
+	readonly #tokens: TokenStoreState;
+
+	constructor(options: DeviceTrustOptions = {}) {
+		this.#tokens = new TokenStoreState(options.store ?? new MemoryTrustStore());
+	}
 
 	startPairing(options: PairingStartOptions = {}): PairingStatus {
 		return this.#pairing.start(options);
@@ -86,8 +100,19 @@ export class DeviceTrust {
 		return this.#tokens.verify(token);
 	}
 
+	/** Forget every device and rotate the hashing secret. */
 	revokeAllTrustedDevices(): void {
 		this.#tokens.revokeAll();
+	}
+
+	/** Revoke one device by its id or an unambiguous id prefix. */
+	revokeDevice(idOrPrefix: string): RevokeDeviceResult {
+		return this.#tokens.revoke(idOrPrefix);
+	}
+
+	/** Re-read persisted trust: false once the device was revoked anywhere. */
+	isTrustedDevice(deviceId: string): boolean {
+		return this.#tokens.has(deviceId);
 	}
 
 	listTrustedDevices(): TrustedDevice[] {
@@ -170,10 +195,10 @@ class PairingState {
 // MARK: - Internal: token store
 
 class TokenStoreState {
-	private readonly serverSecret = createSecret();
-	private readonly devices = new Map<string, TrustedDeviceRecord>();
+	constructor(private readonly store: TrustStore) {}
 
 	issue(input: { name?: string; remoteAddress?: string }): { token: string; device: TrustedDevice } {
+		const file = this.read();
 		const token = createToken();
 		const now = new Date().toISOString();
 		const id = createToken().slice(0, 16);
@@ -183,30 +208,62 @@ class TokenStoreState {
 			createdAt: now,
 			lastSeenAt: now,
 			remoteAddress: input.remoteAddress,
-			tokenHash: hashToken(token, this.serverSecret),
+			tokenHash: hashToken(token, file.secret),
 		};
-		this.devices.set(id, record);
+		file.devices.push(record);
+		this.store.save(file);
 		return { token, device: publicDevice(record) };
 	}
 
 	verify(token: string): TrustedDevice | undefined {
 		if (!token || token.length > MAX_TOKEN_LENGTH) return undefined;
-		const candidate = hashToken(token, this.serverSecret);
-		for (const record of this.devices.values()) {
-			if (constantTimeEqualString(record.tokenHash, candidate)) {
-				record.lastSeenAt = new Date().toISOString();
-				return publicDevice(record);
-			}
+		const file = this.read();
+		const candidate = hashToken(token, file.secret);
+		let match: TrustedDeviceRecord | undefined;
+		for (const record of file.devices) {
+			// No early exit: keep the comparison count independent of position.
+			if (constantTimeEqualString(record.tokenHash, candidate)) match = record;
 		}
-		return undefined;
+		if (!match) return undefined;
+		match.lastSeenAt = new Date().toISOString();
+		this.store.save(file);
+		return publicDevice(match);
+	}
+
+	revoke(idOrPrefix: string): RevokeDeviceResult {
+		const needle = idOrPrefix.trim();
+		const file = this.read();
+		const matches = needle ? file.devices.filter((record) => record.id === needle || record.id.startsWith(needle)) : [];
+		const exact = matches.find((record) => record.id === needle);
+		const target = exact ?? (matches.length === 1 ? matches[0] : undefined);
+		if (!target) {
+			return matches.length > 1
+				? { ok: false, code: "AMBIGUOUS", message: `"${needle}" matches ${matches.length} devices; use more characters.` }
+				: { ok: false, code: "NOT_FOUND", message: `No trusted device matches "${needle}".` };
+		}
+		file.devices = file.devices.filter((record) => record.id !== target.id);
+		this.store.save(file);
+		return { ok: true, device: publicDevice(target) };
 	}
 
 	revokeAll(): void {
-		this.devices.clear();
+		this.store.save({ version: 1, secret: createSecret(), devices: [] });
+	}
+
+	has(deviceId: string): boolean {
+		return this.read().devices.some((record) => record.id === deviceId);
 	}
 
 	list(): TrustedDevice[] {
-		return [...this.devices.values()].map(publicDevice);
+		return this.read().devices.map(publicDevice);
+	}
+
+	private read(): TrustFile {
+		const existing = this.store.load();
+		if (existing) return existing;
+		const fresh: TrustFile = { version: 1, secret: createSecret(), devices: [] };
+		this.store.save(fresh);
+		return fresh;
 	}
 }
 

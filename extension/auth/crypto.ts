@@ -1,7 +1,8 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
+/** Six-digit pairing code from the CSPRNG (never `Math.random()`). */
 export function createPairingCode(): string {
-	const digits = String(Math.floor(100_000 + Math.random() * 900_000));
+	const digits = String(randomInt(100_000, 1_000_000));
 	return `${digits.slice(0, 3)}-${digits.slice(3)}`;
 }
 

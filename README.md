@@ -110,17 +110,17 @@ restored. Pi continues running on the host computer. This local-only path does n
 
 | Component | Preview baseline | Validation |
 |---|---|---|
-| Pi | 0.83.0 | Extension, protocol, and live-prompt E2E |
+| Pi | 1.5.0 | Extension, protocol, and live-prompt E2E |
 | Node.js | 22.19 or newer | Ubuntu CI and Debian Bookworm E2E |
 | macOS host | Current macOS | Physical iPhone acceptance |
 | Linux host | Node 22 on Debian Bookworm | Docker protocol E2E; physical iPhone-to-Linux LAN testing remains open |
-| Xcode | 26.2 or newer | Generated workspace, Simulator, and signed device builds |
-| Tuist | 4.202.6 | Pinned in `.mise.toml` |
+| Xcode | 27.1 or newer | Checked-in `Pi/Pi.xcodeproj`, Simulator, and signed device builds |
+| Tuist (optional) | 4.202.6 | Only for regenerating from `Project.swift`; pinned in `.mise.toml` |
 | iOS | 26.2 or newer | Current deployment target |
 
-The iPhone and Pi host must share a trusted local network. On Linux, allow inbound TCP traffic on port `3769`.
+The iPhone and Pi host must share a local network. On Linux, allow inbound TCP traffic on port `3769`. On macOS, allow incoming connections for `node` when the firewall asks.
 
-A container, VPN, or extra network interface can produce the wrong advertised address. If this happens, enter the host's LAN URL manually.
+Pi binds its private LAN address (preferring `en0`) and skips VPN, bridge, and container interfaces. If it still picks the wrong one, pass `--host <lan-ip>`.
 
 ## Install the Pi extension
 
@@ -160,32 +160,20 @@ loads the local extension automatically.
 
 The iOS app is source-only. You need an Apple ID that Xcode can use for device signing.
 
-Install the pinned tools and resolve Swift packages:
+Open the checked-in project. No Tuist or mise is needed:
 
 ```bash
-mise trust
-mise install
-tuist install
+open Pi/Pi.xcodeproj
 ```
 
-Generate the workspace with your Apple team and a unique bundle identifier:
+A free personal team is enough. Under **Signing & Capabilities**, choose your team for the `Pi` target and, if needed, change the bundle identifier (default `com.insanearts.Pi`). Select your iPhone and press **Run**. On the first install, trust the developer under **Settings → General → VPN & Device Management**. Free-team builds expire after seven days; run again from Xcode to renew.
+
+Aurora's shader needs the Metal toolchain: `xcodebuild -downloadComponent MetalToolchain`.
+
+For a Simulator build:
 
 ```bash
-TUIST_PI_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
-TUIST_PI_BUNDLE_IDENTIFIER=com.yourname.PiRemote \
-tuist generate --no-open
-open Pi.xcworkspace
-```
-
-In Xcode, select the `Pi` scheme and your iPhone. Press **Run** to build and install the app.
-
-If Xcode cannot sign the app, add your Apple ID under **Xcode → Settings → Accounts**. Then regenerate with that account's team identifier.
-
-For a Simulator build, signing variables are not required:
-
-```bash
-tuist generate --no-open
-xcodebuild -workspace Pi.xcworkspace \
+xcodebuild -project Pi/Pi.xcodeproj \
   -scheme Pi \
   -destination 'generic/platform=iOS Simulator' \
   -skipMacroValidation \
@@ -194,7 +182,7 @@ xcodebuild -workspace Pi.xcworkspace \
 
 The Simulator does not provide the VisionKit camera scanner. Use manual pairing with `/remote start --host 127.0.0.1`.
 
-`Project.swift` is the project source of truth. The pre-Tuist project remains available in Git history.
+`Project.swift` + `Tuist/` remain for optional Tuist users (`tuist generate` writes `Pi.xcworkspace` at the repo root). Keep package pins in both places in sync.
 
 ## Pair and connect
 
@@ -204,20 +192,29 @@ Start Pi, then run:
 /remote start
 ```
 
-Pi binds a WebSocket server to the host's local network interface. It prints the
-host's LAN URL, a short-lived pairing code, and a QR deep link.
+Pi binds a TLS WebSocket server (`wss://`) to the host's private LAN address and
+advertises it over Bonjour (`_pi-remote._tcp`). It prints the URL with the
+certificate pin (`#fp=…`), the short host fingerprint, a short-lived pairing
+code, and a QR deep link.
 
-Keep the iPhone and Pi host on the same trusted network. Scan the QR code from
-the Pi Remote pairing screen or with the iPhone Camera app. You can also enter
-the printed `ws://` URL and code, then tap **Connect & Pair**.
+Scan the QR code from the Pi Remote pairing screen or with the iPhone Camera
+app. Or tap the Pi under **Nearby** (or paste the printed `wss://` URL), enter
+the code, and tap **Connect & Pair**. Compare the fingerprint shown by the app
+with the `Fingerprint:` line in Pi.
 
 The pairing code expires after two minutes and stops working after one success.
 
-The device token remains valid only while that Pi extension process lives. Exiting Pi or running `/reload` clears host trust and requires a new pairing.
+The TLS identity and trusted devices live in `~/.pi/agent/pi-remote/` and are
+shared by every Pi window, so a paired iPhone survives `/reload` and restarts.
+When the Mac's IP changes, Pi rebinds and the app finds it again by fingerprint
+over Bonjour.
 
-LAN WebSockets are not encrypted. A peer that can intercept local traffic can read session content or steal the bearer token.
+Traffic is encrypted, and the app pins the host certificate, so a LAN peer can
+neither read the session nor impersonate the Mac. A paired phone still has
+terminal-equivalent control: do not use port forwarding or an Internet tunnel.
 
-Use a trusted private network. Do not use guest or public Wi-Fi, port forwarding, or an Internet tunnel.
+`/remote autostart on` resumes the server in every interactive Pi session for
+already-paired devices; pairing a new device still needs `/remote start`.
 
 For Simulator-only loopback access:
 
@@ -230,10 +227,13 @@ For Simulator-only loopback access:
 ```text
 /remote status
 /remote stop
+/remote devices
+/remote revoke <device-id-prefix>
 /remote rotate
+/remote autostart on|off
 ```
 
-`/remote stop` closes remote access without revoking trusted devices. `/remote rotate` revokes every device for the running Pi process.
+`/remote stop` closes remote access without revoking trusted devices. `/remote revoke` removes one device and disconnects it in every Pi window. `/remote rotate` revokes every device.
 
 If the app reports an outdated extension, run `/reload` and then `/remote start`.
 
@@ -249,9 +249,7 @@ npm run check
 Run the iOS tests:
 
 ```bash
-tuist install
-tuist generate --no-open
-xcodebuild -workspace Pi.xcworkspace \
+xcodebuild -project Pi/Pi.xcodeproj \
   -scheme Pi \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -skipMacroValidation \
@@ -268,7 +266,7 @@ Run the full iOS E2E test against a real Pi process and configured model:
 scripts/run-e2e.mjs
 ```
 
-If several matching Simulators exist, set `PI_E2E_SIMULATOR_ID`. Set `PI_E2E_MODEL` to use another configured model.
+If several matching Simulators exist, set `PI_E2E_SIMULATOR_ID`. Set `PI_E2E_MODEL` to use another configured model, and `PI_E2E_EXTENSIONS` (comma-separated paths) when that model's provider is registered by an extension. The run uses a throwaway `PI_REMOTE_STATE_DIR`, so it never touches your paired devices.
 
 Run Linux extension acceptance through Docker:
 

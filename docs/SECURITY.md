@@ -5,8 +5,10 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 ## Current defaults
 
 - `/remote start` starts the server and enables pairing immediately.
-- Binds to `0.0.0.0` and advertises the Pi host's LAN address by default.
-- The iPhone and Pi host must use the same trusted local network.
+- Binds only the host's private LAN address (`--host auto`, preferring `en0`; VPN, bridge, and container interfaces are skipped) and rebinds when DHCP changes it. `--host <ip>` pins an address; `127.0.0.1` is loopback-only.
+- Peers outside loopback, RFC 1918, link-local, and IPv6 ULA ranges are dropped at the TCP level.
+- Transport is TLS (`https` / `wss`, TLS 1.2 minimum) with a self-signed ECDSA P-256 host certificate.
+- The service is advertised over Bonjour as `_pi-remote._tcp` (macOS `dns-sd`; disable with `--no-bonjour`).
 - WebSocket path is `/v1/ws`.
 - Message size is limited by the WebSocket server.
 - Browser `Origin` is checked when present.
@@ -27,7 +29,7 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 - Code allows 5 failed attempts.
 - Successful pairing disables the code.
 - Run `/remote start` again to create a fresh pairing code.
-- The QR code printed alongside the textual code encodes a `pi-remote://pair?url=...&code=...` deep link. It carries no credentials beyond what is already on screen; anyone in viewing distance of the terminal during the 2-minute window has equivalent access via either form.
+- The QR code printed alongside the textual code encodes a `pi-remote://pair?url=...&code=...` deep link whose URL carries the certificate pin (`#fp=…`). It carries no credentials beyond what is already on screen; anyone in viewing distance of the terminal during the 2-minute window has equivalent access via either form.
 - iOS registers the `pi-remote` URL scheme. When a deep link reaches the app, the reducer auto-fires `auth.pair.request` against the embedded host + code. The app refuses the deep link if the user is already authenticated to a session — they must explicitly forget the device first. The same one-time pairing-code constraints apply (2-minute window, 5 failed attempts, single successful pair).
 
 ## Token model
@@ -36,15 +38,19 @@ Pi Remote should be treated as equivalent to terminal access to the machine runn
 - Tokens are returned once after pairing.
 - Swift app should store tokens in Keychain.
 - Server stores only salted hashes.
-- Tokens are in-memory only for now; exiting Pi or running `/reload` forgets trusted devices.
+- Trusted devices (token hashes + server secret) persist in `~/.pi/agent/pi-remote/trusted-devices.json` (directory `0700`, file `0600`; override the directory with `PI_REMOTE_STATE_DIR`). Every Pi window shares and re-reads it, so `/remote revoke` and `/remote rotate` take effect everywhere; connected revoked devices are closed with `4003` within one heartbeat.
+- A corrupt trust file is moved aside and treated as empty (fail closed).
+- `/remote rotate` also rotates the server secret, invalidating every outstanding token.
 
 ## Local network transport
 
-- `/remote start` exposes `ws://<host-lan-address>:3769/v1/ws` to the local network.
-- Pairing codes and device tokens control access, but LAN WebSocket traffic is not encrypted.
-- A local peer that can observe traffic can read prompts, responses, tool data, and bearer tokens.
-- A local peer that can alter traffic can reuse a stolen token for terminal-equivalent control.
-- Use Pi Remote only on a trusted private network.
+- `/remote start` exposes `wss://<host-lan-address>:3769/v1/ws` to the local network.
+- The host identity (`tls-key.pem` `0600`, `tls-cert.pem`) lives next to the trust file and is shared by all Pi windows. Its pin is the base64url SHA-256 of the certificate DER; `/remote status` prints its first 8 bytes as `Fingerprint: XXXX XXXX XXXX XXXX`.
+- The pin travels only in URL fragments (`wss://…#fp=<pin>`), which are never sent on the wire, and in the Bonjour TXT record.
+- The iOS app pins the leaf certificate: a different certificate fails the handshake. A URL entered without `#fp=` is pinned on first use (TOFU) — compare the fingerprint the app shows with the Mac before pairing.
+- The app refuses plain `ws://` except to loopback hosts.
+- Bonjour TXT exposes only the public fingerprint, address, port, path, project folder name, and a 16-hex SHA-256 tag of the working directory. A spoofed advertisement cannot pass the pin check.
+- Pairing codes and device tokens still control access; TLS protects them in transit.
 - `/remote start --host 127.0.0.1` limits access to a client on the same host.
 
 ## Execution policy
@@ -62,6 +68,10 @@ A prompt sent from the iOS app can start an iOS 26 continued-processing task. Th
 Live Activity titles, phase subtitles, and local notifications contain only generic state such as working, needs input, completed, failed, or stopped. They never contain prompts, responses, tool output, commands, file paths, hostnames, branch names, tokens, or pairing codes.
 
 This path does not use APNs. Monitoring stops if iOS expires the task, the user removes the app from the app switcher, reconnect attempts fail, or the user disconnects. Stopping mobile monitoring does not stop Pi on the host computer.
+
+## Autostart
+
+`/remote autostart on` (stored in `settings.json` next to the trust file) starts the server in interactive TUI sessions so paired devices can reconnect. It never opens a pairing window: pairing a new device always needs an explicit `/remote start` at the host.
 
 ## Do not
 

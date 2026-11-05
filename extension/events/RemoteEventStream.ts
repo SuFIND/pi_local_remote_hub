@@ -70,8 +70,10 @@ export class RemoteEventStream {
 
 				if (!INTERNAL_ONLY_EVENTS.has(eventName)) {
 					const mapped = mapPiEvent(eventName, event);
-					if (eventName === "tool_execution_end") this.attachEditPayload(event, mapped.payload);
-					this.server.broadcast(mapped.type, mapped.payload);
+					if (mapped) {
+						if (eventName === "tool_execution_end") this.attachEditPayload(event, mapped.payload);
+						this.server.broadcast(mapped.type, mapped.payload);
+					}
 				}
 				if (summary) this.server.broadcast("session.run.completed", summary);
 				if (STATE_CHANGE_EVENTS.has(eventName)) this.server.broadcastStateChanged(eventName);

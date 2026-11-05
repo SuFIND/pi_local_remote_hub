@@ -46,4 +46,5 @@ export const SERVER_CLOSE_CODES = {
 	HEARTBEAT_TIMEOUT: { code: 4000, reason: "Heartbeat timeout" },
 	AUTHENTICATION_TIMEOUT: { code: 4001, reason: "Authentication timeout" },
 	SERVER_SHUTDOWN: { code: 1001, reason: "Server shutting down" },
+	DEVICE_REVOKED: { code: 4003, reason: "Device revoked" },
 } as const;

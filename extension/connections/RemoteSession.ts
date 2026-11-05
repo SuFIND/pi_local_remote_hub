@@ -34,6 +34,10 @@ export class RemoteSession {
 		return Boolean(this.authenticatedDevice);
 	}
 
+	authenticatedDeviceId(): string | undefined {
+		return this.authenticatedDevice?.id;
+	}
+
 	async handle(message: ClientMessage): Promise<void> {
 		if (message.kind === "connection.ping") {
 			this.options.send("connection.pong", { ok: true }, message.id);

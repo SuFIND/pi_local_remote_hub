@@ -2,7 +2,7 @@
 
 Protocol version: `1`.
 
-Transport: WebSocket at `/v1/ws`.
+Transport: WebSocket over TLS (`wss://`) at `/v1/ws`. The host certificate is self-signed; clients pin it (see [Host identity and discovery](#host-identity-and-discovery)). Plain `ws://` is only for loopback test servers.
 
 `/remote start` starts the server and enables a short-lived pairing code. There is intentionally no separate `/remote pair` command.
 
@@ -48,8 +48,10 @@ Fields:
 Client opens:
 
 ```txt
-ws://host:3769/v1/ws
+wss://host:3769/v1/ws
 ```
+
+The printed and QR URL is `wss://host:3769/v1/ws#fp=<pin>`. Strip the fragment before dialing and verify the presented certificate against `<pin>`.
 
 Server sends `server.hello`:
 
@@ -112,7 +114,7 @@ Server replies:
 }
 ```
 
-Store `token` in iOS Keychain. The server stores only a token hash in memory. Exiting Pi or reloading the extension invalidates the token.
+Store `token` in iOS Keychain. The server stores only a token hash, in the shared trust file (`~/.pi/agent/pi-remote/trusted-devices.json`), so the token survives `/reload`, Pi restarts, and other Pi windows on the same host. `/remote revoke` or `/remote rotate` invalidates it.
 
 After auth, server also emits:
 
@@ -561,10 +563,28 @@ Stable error codes are listed in `extension/protocol/errors.ts`.
 `/remote start` also prints a QR code encoding a deep link with the same WebSocket URL and pairing code shown in the textual status block:
 
 ```
-pi-remote://pair?url=<percent-encoded ws url>&code=<6-digit-code>
+pi-remote://pair?url=<percent-encoded wss url including #fp=<pin>>&code=<6-digit-code>
 ```
 
 This is a UX convenience for iOS clients that implement a QR scanner — it carries no credentials beyond what the printed status already shows. Anyone in viewing distance of the terminal can read the pairing code either way, so QR and text have equivalent exposure.
+
+## Host identity and discovery
+
+- **Pin:** base64url (no padding, 43 chars) SHA-256 of the leaf certificate's DER. The short display form is the first 8 bytes as uppercase hex in groups of 4 (`6AFB 984A 305D 1BF3`), printed as `Fingerprint:` by `/remote start` and `/remote status`.
+- **Shared identity:** every Pi window on a host uses the same certificate, so one pin covers all of them.
+- **Bonjour:** on macOS each running server registers `_pi-remote._tcp` (instance `Pi · <project>`). TXT keys:
+
+| Key | Value |
+|---|---|
+| `v` | protocol version |
+| `fp` | pin |
+| `host` | advertised LAN address |
+| `port` | listening port |
+| `path` | WebSocket path (`/v1/ws`) |
+| `proj` | working-directory basename (optional) |
+| `cwd` | first 16 hex chars of SHA-256 of the UTF-8 working directory (optional) |
+
+Clients build `wss://<host>:<port><path>#fp=<fp>` from a record, and accept it only if `fp` is a valid pin. After an address change a client reconnects to the record with its pinned `fp`. It prefers the same address, then the same `cwd` tag, then a single remaining candidate.
 
 ## Server close codes
 
@@ -573,3 +593,4 @@ This is a UX convenience for iOS clients that implement a QR scanner — it carr
 | 1001 | `Server shutting down` | `/remote stop`, Pi shutdown, reload, or server restart. |
 | 4000 | `Heartbeat timeout` | Client stopped responding to ping/pong or messages. |
 | 4001 | `Authentication timeout` | Client did not authenticate within the auth timeout window. |
+| 4003 | `Device revoked` | The device was revoked (`/remote revoke`, `/remote rotate`), possibly from another Pi window. Forget the token and re-pair. |
