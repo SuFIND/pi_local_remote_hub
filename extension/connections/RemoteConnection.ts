@@ -5,7 +5,16 @@ import { SERVER_CAPABILITIES, SERVER_CLOSE_CODES } from "../protocol/capabilitie
 import { createErrorPayload, type ServerEnvelope } from "../protocol/envelopes.js";
 import { ProtocolError } from "../protocol/errors.js";
 import { decodeClientMessage } from "../protocol/ProtocolDecoder.js";
-import type { RemoteSession } from "./RemoteSession.js";
+import type { ClientMessage } from "../protocol/ProtocolDecoder.js";
+
+/** Per-connection protocol state: authentication plus whatever commands it serves. */
+export type ConnectionSession = {
+	handle(message: ClientMessage): Promise<void>;
+	isAuthenticated(): boolean;
+	authenticatedDeviceId(): string | undefined;
+	/** Called once the socket is gone. */
+	dispose?(): void;
+};
 
 export type RemoteConnectionOptions = {
 	id: string;
@@ -13,7 +22,7 @@ export type RemoteConnectionOptions = {
 	ws: WebSocket;
 	config: RemoteConfig;
 	logger: Logger;
-	session: RemoteSession;
+	session: ConnectionSession;
 	isPairingAvailable: () => boolean;
 	/** Re-checked on every heartbeat so a revoked device is dropped. */
 	isDeviceTrusted: (deviceId: string) => boolean;
@@ -27,7 +36,7 @@ export class RemoteConnection {
 	private readonly ws: WebSocket;
 	private readonly config: RemoteConfig;
 	private readonly logger: Logger;
-	private readonly session: RemoteSession;
+	private readonly session: ConnectionSession;
 	private readonly isPairingAvailable: () => boolean;
 	private readonly isDeviceTrusted: (deviceId: string) => boolean;
 	private readonly sendFromServer: RemoteConnectionOptions["send"];
@@ -138,6 +147,7 @@ export class RemoteConnection {
 	private cleanup(): void {
 		if (this.authTimeout) clearTimeout(this.authTimeout);
 		if (this.heartbeat) clearInterval(this.heartbeat);
+		this.session.dispose?.();
 		this.onClose(this);
 	}
 }

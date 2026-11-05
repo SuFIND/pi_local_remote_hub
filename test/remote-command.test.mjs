@@ -3,119 +3,113 @@ import test from "node:test";
 import jitiFactory from "jiti";
 
 const jiti = jitiFactory(import.meta.url);
-const { formatDevices, formatStatus, parseRemoteArgs, registerRemoteCommand } = jiti("../extension/command.ts");
+const { formatDevices, formatStatus, registerRemoteCommand } = jiti("../extension/command.ts");
 
-function runningStatus(overrides = {}) {
+function hubStatus(overrides = {}) {
 	return {
 		running: true,
-		httpUrl: "https://192.168.1.10:3769",
 		webSocketUrl: "wss://192.168.1.10:3769/v1/ws#fp=PIN",
 		displayWebSocketUrl: "wss://192.168.1.10:3769/v1/ws",
-		fingerprint: "PIN",
 		fingerprintShort: "AB12 CD34 EF56 7890",
 		followsLanAddress: true,
-		bonjour: { active: true, instanceName: "Pi · project" },
-		connections: 0,
-		config: { host: "192.168.1.10", port: 3769 },
-		deviceTrust: { pairing: { active: true, code: "123-456", expiresAt: "2030-01-01T00:00:00.000Z", remainingAttempts: 5 }, trustedDevices: [] },
-		lanExposure: true,
-		pairingCode: "123-456",
-		pairingExpiresAt: "2030-01-01T00:00:00.000Z",
+		bonjour: { active: true, instanceName: "Hub · Mac" },
+		connections: 1,
+		roots: ["/Users/me/code"],
+		agents: 2,
+		idleExitMinutes: 3,
+		deviceTrust: { pairing: { active: false }, trustedDevices: [] },
 		...overrides,
 	};
 }
 
-test("remote start keeps public tunnels disabled", async () => {
+function harness(control) {
 	let command;
-	let startOptions;
-	const pi = {
-		registerCommand: (name, definition) => {
-			if (name === "remote") command = definition;
+	const calls = [];
+	const notices = [];
+	const pi = { registerCommand: (name, spec) => (command = { name, ...spec }) };
+	const hub = {
+		control: async (op, args) => {
+			calls.push({ op, args });
+			return control(op, args);
 		},
 	};
-	const runtime = {
-		start: async (options) => {
-			startOptions = options;
-			return runningStatus();
-		},
-		onStatusChange: () => {},
-	};
-	const logger = {
-		setMinLevel: () => {},
-		info: () => {},
-	};
+	registerRemoteCommand(pi, hub, { hubHint: "Start it with: node hub/bin.mjs run" });
 	const ctx = {
-		ui: {
-			notify: () => {},
-			setStatus: () => {},
+		ui: { notify: (message, level) => notices.push({ message, level }) },
+		sessionManager: { getSessionFile: () => "/tmp/s.jsonl" },
+		waitForIdle: async () => calls.push({ op: "waitForIdle" }),
+		switchSession: async (file) => {
+			calls.push({ op: "switchSession", file });
+			return { cancelled: false };
 		},
 	};
+	return { command, calls, notices, run: (args) => command.handler(args, ctx) };
+}
 
-	registerRemoteCommand(pi, runtime, {
-		captureContext: () => {},
-		refreshExecutionContext: async () => {},
-	}, logger);
-	await command.handler("start", ctx);
-
-	assert.equal(startOptions.useTunnel, false);
+test("/remote completes the hub actions and defaults to status", async () => {
+	const { command, calls, notices, run } = harness(() => hubStatus());
+	assert.equal(command.name, "remote");
+	assert.deepEqual(
+		command.getArgumentCompletions("r").map((item) => item.value),
+		["revoke", "rotate"],
+	);
+	await run("");
+	assert.deepEqual(calls, [{ op: "status", args: undefined }]);
+	assert.match(notices[0].message, /Pi Remote Hub is running/);
+	assert.match(notices[0].message, /Folders: \/Users\/me\/code/);
+	assert.match(notices[0].message, /Pi sessions online: 2 · phones connected: 1 · background Pi exits after 3 min idle/);
 });
 
-test("remote start prints the pinned wss URL, fingerprint and a deep link carrying the pin", async () => {
-	let command;
-	const notes = [];
-	const statuses = [];
-	const pi = { registerCommand: (name, definition) => name === "remote" && (command = definition) };
-	const runtime = { start: async () => runningStatus(), onStatusChange: () => {} };
-	const ctx = { ui: { notify: (message) => notes.push(message), setStatus: (_key, value) => statuses.push(value) } };
-	registerRemoteCommand(pi, runtime, { captureContext: () => {}, refreshExecutionContext: async () => {} }, { setMinLevel: () => {}, info: () => {} });
-	await command.handler("start", ctx);
-
-	const text = notes.join("\n");
-	assert.match(text, /^WebSocket: wss:\/\/192\.168\.1\.10:3769\/v1\/ws#fp=PIN$/m);
-	assert.match(text, /^Fingerprint: AB12 CD34 EF56 7890$/m);
-	assert.match(text, /^Pairing code: 123-456$/m);
-	assert.match(text, /^Bonjour: advertising "Pi · project"$/m);
-	const link = text.match(/^Deep link: (\S+)$/m)?.[1];
-	assert.equal(new URL(link).searchParams.get("url"), "wss://192.168.1.10:3769/v1/ws#fp=PIN");
-	assert.deepEqual(statuses, ["remote: wss://192.168.1.10:3769/v1/ws"]);
+test("/remote pair prints the code, a QR code and a pinned deep link", async () => {
+	const { notices, run } = harness(() =>
+		hubStatus({ pairingCode: "123-456", pairingExpiresAt: "2030-01-01T00:00:00.000Z", deviceTrust: { pairing: { active: true, code: "123-456", expiresAt: "2030-01-01T00:00:00.000Z", remainingAttempts: 5 }, trustedDevices: [] } }),
+	);
+	await run("pair");
+	const message = notices[0].message;
+	assert.match(message, /Pairing code: 123-456/);
+	assert.match(message, /Scan to pair:/);
+	assert.match(message, /Deep link: pi-remote:\/\/pair\?url=wss%3A%2F%2F192\.168\.1\.10%3A3769%2Fv1%2Fws%23fp%3DPIN&code=123-456/);
 });
 
-test("parseRemoteArgs understands device management and flags", () => {
-	assert.equal(parseRemoteArgs("").action, "start");
-	assert.equal(parseRemoteArgs("--host 127.0.0.1").host, "127.0.0.1");
-	assert.equal(parseRemoteArgs("start --no-advertise").advertise, false);
-	assert.equal(parseRemoteArgs("start").advertise, true);
-	assert.deepEqual(parseRemoteArgs("revoke abc123"), { action: "revoke", target: "abc123" });
-	assert.deepEqual(parseRemoteArgs("autostart on"), { action: "autostart", target: "on" });
-	assert.equal(parseRemoteArgs("devices").action, "devices");
-	assert.throws(() => parseRemoteArgs("autostart maybe"), /Usage/);
-	assert.throws(() => parseRemoteArgs("start --port 99999"), /Port/);
+test("/remote revoke needs an id and reports the revoked device", async () => {
+	const { calls, notices, run } = harness((op) => (op === "revoke" ? { id: "dev-1", name: "iPhone" } : hubStatus()));
+	await run("revoke");
+	assert.equal(notices[0].level, "error");
+	assert.equal(calls.length, 0);
+	await run("revoke dev-1");
+	assert.deepEqual(calls, [{ op: "revoke", args: { id: "dev-1" } }]);
+	assert.match(notices[1].message, /Revoked iPhone \(dev-1\)/);
 });
 
-test("remote revoke and devices report through the runtime", async () => {
-	let command;
-	const notes = [];
-	const revoked = [];
-	const pi = { registerCommand: (name, definition) => name === "remote" && (command = definition) };
-	const device = { id: "dev123456", name: "iPhone", createdAt: "2026-01-01", lastSeenAt: "2026-01-02", remoteAddress: "192.168.1.5" };
-	const runtime = {
-		getStatus: () => runningStatus({ deviceTrust: { pairing: { active: false }, trustedDevices: [device] } }),
-		revokeDevice: (id) => {
-			revoked.push(id);
-			return { ok: true, device };
-		},
-	};
-	const ctx = { ui: { notify: (message, level) => notes.push({ message, level }), setStatus: () => {} } };
-	registerRemoteCommand(pi, runtime, { captureContext: () => {}, refreshExecutionContext: async () => {} }, { setMinLevel: () => {}, info: () => {} });
+test("/remote explains how to start the hub when it is unreachable", async () => {
+	const { notices, run } = harness(() => {
+		throw new Error("Pi Remote Hub is not running");
+	});
+	await run("status");
+	assert.equal(notices[0].level, "error");
+	assert.equal(notices[0].message, "Pi Remote Hub is not running. Start it with: node hub/bin.mjs run");
+});
 
-	await command.handler("devices", ctx);
-	assert.match(notes[0].message, /dev123456 {2}iPhone/);
-	await command.handler("revoke dev12", ctx);
-	assert.deepEqual(revoked, ["dev12"]);
-	assert.match(notes[1].message, /Revoked iPhone \(dev123456\)/);
-	await command.handler("revoke", ctx);
-	assert.equal(notes[2].level, "error");
+test("/remote takeover reloads this window's session after it is idle", async () => {
+	const { calls, run } = harness(() => hubStatus());
+	await run("takeover");
+	assert.deepEqual(calls, [{ op: "waitForIdle" }, { op: "switchSession", file: "/tmp/s.jsonl" }]);
+});
 
+test("unknown /remote actions show usage", async () => {
+	const { notices, run } = harness(() => hubStatus());
+	await run("start");
+	assert.match(notices[0].message, /^Usage: \/remote pair\|status\|devices\|revoke\|rotate\|takeover/);
+});
+
+test("formatStatus reports a hub that cannot reach the LAN", () => {
+	assert.equal(formatStatus(hubStatus({ running: false, lastError: "No private LAN IPv4 address found" })), "Pi Remote Hub is not listening: No private LAN IPv4 address found");
+	assert.match(formatStatus(hubStatus({ roots: [] })), /Folders: none configured/);
+});
+
+test("formatDevices lists trusted devices and explains revocation", () => {
 	assert.match(formatDevices([]), /No trusted devices/);
-	assert.equal(formatStatus({ running: false }), "Pi Remote is stopped");
+	const text = formatDevices([{ id: "dev-1", name: "iPhone", createdAt: "a", lastSeenAt: "b", remoteAddress: "192.168.1.20" }]);
+	assert.match(text, /dev-1 {2}iPhone {2}paired a {2}last seen b from 192\.168\.1\.20/);
+	assert.match(text, /\/remote revoke <id>/);
 });

@@ -23,6 +23,8 @@ export type BonjourAdvertisementInput = {
 	webSocketPath: string;
 	protocolVersion: number;
 	cwd?: string;
+	/** Display name instead of the cwd basename (the hub uses the Mac's name). */
+	name?: string;
 };
 
 export type BonjourAdvertisement = {
@@ -51,7 +53,8 @@ const MAX_INSTANCE_NAME_BYTES = 63;
 const MAX_PROJECT_BYTES = 60;
 
 export function buildBonjourAdvertisement(input: BonjourAdvertisementInput): BonjourAdvertisement {
-	const project = input.cwd ? truncateUtf8(basename(input.cwd) || input.cwd, MAX_PROJECT_BYTES) : "";
+	const label = input.name ?? (input.cwd ? basename(input.cwd) || input.cwd : "");
+	const project = label ? truncateUtf8(label, MAX_PROJECT_BYTES) : "";
 	const txt: Record<string, string> = {
 		v: String(input.protocolVersion),
 		fp: input.fingerprint,

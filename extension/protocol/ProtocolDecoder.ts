@@ -18,6 +18,12 @@ export type ClientMessage =
 	| { kind: "session.listSkills"; id?: string }
 	| { kind: "session.setModel"; id?: string; provider: string; modelId: string }
 	| { kind: "session.setThinkingLevel"; id?: string; level: string }
+	| { kind: "hub.listProjects"; id?: string }
+	| { kind: "hub.listSessions"; id?: string; cwd: string }
+	| { kind: "hub.listFolders"; id?: string; path: string }
+	| { kind: "hub.openSession"; id?: string; sessionPath: string }
+	| { kind: "hub.newSession"; id?: string; cwd: string }
+	| { kind: "hub.detach"; id?: string }
 	| { kind: "unknown"; id?: string; type: string };
 
 const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const;
@@ -97,7 +103,28 @@ export function decodeClientMessage(data: WebSocket.RawData): ClientMessage {
 		};
 	}
 
+	if (type === "hub.listProjects") return { kind: "hub.listProjects", id };
+	if (type === "hub.detach") return { kind: "hub.detach", id };
+	if (type === "hub.listSessions" || type === "hub.newSession") {
+		const body = requireRecord(payload, "Payload is required");
+		return { kind: type, id, cwd: requireAbsolutePath(body.cwd, "cwd must be an absolute path") };
+	}
+	if (type === "hub.listFolders") {
+		const body = requireRecord(payload, "Payload is required");
+		return { kind: "hub.listFolders", id, path: requireAbsolutePath(body.path, "path must be an absolute path") };
+	}
+	if (type === "hub.openSession") {
+		const body = requireRecord(payload, "Payload is required");
+		return { kind: "hub.openSession", id, sessionPath: requireAbsolutePath(body.sessionPath, "sessionPath must be an absolute path") };
+	}
+
 	return { kind: "unknown", id, type };
+}
+
+function requireAbsolutePath(value: unknown, message: string): string {
+	const path = requireBoundedString(value, message, 4096);
+	if (!path.startsWith("/") || path.includes("\0")) throw new ProtocolError("BAD_REQUEST", message);
+	return path;
 }
 
 function parseClientEnvelope(data: Buffer | ArrayBuffer | Buffer[]): ClientEnvelope {

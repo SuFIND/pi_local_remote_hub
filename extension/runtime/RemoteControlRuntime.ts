@@ -5,13 +5,11 @@ import type { BonjourAdvertiser, BonjourStatus } from "../net/BonjourAdvertiser.
 import { isLoopbackHost, selectLanAddress } from "../net/lanAddress.js";
 import type { QuestionBroker } from "../questions/QuestionBroker.js";
 import type { RemoteServer } from "../server/RemoteServer.js";
-import type { CloudflareTunnel, CloudflareTunnelHandle } from "../tunnel/CloudflareTunnel.js";
 
 export type RemoteStartOptions = {
 	host?: string;
 	port?: number;
 	debugRawEvents?: boolean;
-	useTunnel?: boolean;
 	/** Bonjour advertisement; defaults to on. */
 	advertise?: boolean;
 	/** Open a fresh pairing window (default). `false` = serve already-paired devices only (autostart). */
@@ -30,8 +28,6 @@ export type RemoteRuntimeStatus = {
 	/** True when the bind address follows the LAN IP (no explicit `--host`). */
 	followsLanAddress: boolean;
 	bonjour: BonjourStatus;
-	publicWebSocketUrl?: string;
-	tunnelHostname?: string;
 	connections: number;
 	config: RemoteConfig;
 	deviceTrust: DeviceTrustStatus;
@@ -49,6 +45,8 @@ export type RemoteRuntimeOptions = {
 	selectHost?: () => string | undefined;
 	/** Project directory shown in the Bonjour name. */
 	getCwd?: () => string | undefined;
+	/** Explicit Bonjour display name (wins over the cwd basename). */
+	getAdvertisementName?: () => string | undefined;
 	addressPollMs?: number;
 };
 
@@ -58,6 +56,7 @@ export class RemoteControlRuntime {
 	private readonly advertiser?: BonjourAdvertiser;
 	private readonly selectHost: () => string | undefined;
 	private readonly getCwd: () => string | undefined;
+	private readonly getAdvertisementName: () => string | undefined;
 	private readonly addressPollMs: number;
 	private followsLanAddress = false;
 	private addressWatch?: NodeJS.Timeout;
@@ -67,7 +66,6 @@ export class RemoteControlRuntime {
 	constructor(
 		private readonly server: RemoteServer,
 		private readonly deviceTrust: DeviceTrust,
-		private readonly tunnel: CloudflareTunnel,
 		private readonly logger: Logger,
 		private readonly questions?: QuestionBroker,
 		options: RemoteRuntimeOptions = {},
@@ -75,6 +73,7 @@ export class RemoteControlRuntime {
 		this.advertiser = options.advertiser;
 		this.selectHost = options.selectHost ?? (() => selectLanAddress());
 		this.getCwd = options.getCwd ?? (() => undefined);
+		this.getAdvertisementName = options.getAdvertisementName ?? (() => undefined);
 		this.addressPollMs = options.addressPollMs ?? DEFAULT_ADDRESS_POLL_MS;
 	}
 
@@ -113,19 +112,6 @@ export class RemoteControlRuntime {
 		this.followsLanAddress = followsLanAddress;
 		this.logger.info("remote_runtime_started", { host: config.host, port: this.server.getPort() });
 
-		let tunnelHandle: CloudflareTunnelHandle | null = null;
-		if (options.useTunnel) {
-			try {
-				tunnelHandle = await this.tunnel.start(this.server.getPort() ?? config.port, config.webSocketPath);
-			} catch (err) {
-				// Tunnel was requested but failed — tear down so the user isn't left with a
-				// half-running server pointing at the wrong URL.
-				this.deviceTrust.stopPairing();
-				await this.server.stop();
-				throw err;
-			}
-		}
-
 		this.refreshAdvertisement();
 		this.watchAddress();
 
@@ -134,8 +120,6 @@ export class RemoteControlRuntime {
 			pairingCode: pairing?.code,
 			pairingExpiresAt: pairing?.expiresAt,
 			lanExposure: isLanExposure(config.host),
-			publicWebSocketUrl: tunnelHandle?.publicWebSocketUrl,
-			tunnelHostname: tunnelHandle?.publicHostname,
 		};
 	}
 
@@ -144,7 +128,6 @@ export class RemoteControlRuntime {
 		this.advertiser?.stop();
 		this.questions?.cancelAll();
 		this.deviceTrust.stopPairing();
-		await this.tunnel.stop();
 		await this.server.stop();
 	}
 
@@ -163,7 +146,6 @@ export class RemoteControlRuntime {
 	}
 
 	getStatus(): RemoteRuntimeStatus {
-		const tunnelHandle = this.tunnel.getHandle();
 		const running = this.server.isRunning();
 		const identity = running ? this.server.getIdentity() : undefined;
 		return {
@@ -175,8 +157,6 @@ export class RemoteControlRuntime {
 			fingerprintShort: identity?.fingerprintShort,
 			followsLanAddress: running && this.followsLanAddress,
 			bonjour: this.advertiser?.status() ?? { active: false, reason: "unavailable" },
-			publicWebSocketUrl: tunnelHandle?.publicWebSocketUrl,
-			tunnelHostname: tunnelHandle?.publicHostname,
 			connections: this.server.connectionCount(),
 			config: this.server.getConfig(),
 			deviceTrust: this.deviceTrust.getStatus(),
@@ -214,8 +194,8 @@ export class RemoteControlRuntime {
 		try {
 			await this.server.start(config);
 		} catch (error) {
-			// Several Pi windows can each run a listener: if the default port is
-			// taken, take any free port — Bonjour tells the phone where it went.
+			// If the default port is taken, take any free port — Bonjour tells
+			// the phone where it went.
 			if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE" || portIsExplicit) throw error;
 			await this.server.start({ ...config, port: 0 });
 		}
@@ -236,7 +216,9 @@ export class RemoteControlRuntime {
 			this.advertiser.stop("loopback-only server");
 			return;
 		}
+		const name = this.getAdvertisementName();
 		this.advertiser.start({
+			...(name ? { name } : {}),
 			fingerprint: this.server.getIdentity().fingerprint,
 			host,
 			port,

@@ -4,7 +4,13 @@ import { mapPiEvent } from "../pi/eventMapper.js";
 import type { PiRemoteAdapter } from "../pi/PiRemoteAdapter.js";
 import type { RemoteSessionMonitor } from "../session/RemoteSessionMonitor.js";
 import type { RunEvidenceCollector } from "../session/RunEvidenceCollector.js";
-import type { RemoteServer } from "../server/RemoteServer.js";
+
+/** Where mapped Pi events go: the hub link, or a test double. */
+export type RemoteEventSink = {
+	isRunning(): boolean;
+	broadcast(type: string, payload?: unknown): void;
+	broadcastStateChanged(reason: string): void;
+};
 
 const PI_EVENT_NAMES = [
 	"session_start",
@@ -49,7 +55,7 @@ export class RemoteEventStream {
 	private readonly pendingEdits = new Map<string, EditPayload>();
 
 	constructor(
-		private readonly server: RemoteServer,
+		private readonly server: RemoteEventSink,
 		private readonly adapter: PiRemoteAdapter,
 		private readonly monitor: RemoteSessionMonitor,
 		private readonly evidence: RunEvidenceCollector,

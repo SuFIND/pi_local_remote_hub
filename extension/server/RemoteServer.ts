@@ -9,35 +9,35 @@ import type { RemoteConfig } from "../config.js";
 import type { HostIdentity } from "../identity/HostIdentity.js";
 import type { Logger } from "../logging/logger.js";
 import { isAllowedPeerAddress, selectLanAddress } from "../net/lanAddress.js";
-import type { PiRemoteAdapter } from "../pi/PiRemoteAdapter.js";
-import type { RemoteStateSnapshot } from "../pi/stateSnapshot.js";
-import { QuestionBroker } from "../questions/QuestionBroker.js";
 import { createServerEnvelope } from "../protocol/envelopes.js";
 import { ConnectionRegistry } from "../connections/ConnectionRegistry.js";
-import { RemoteConnection } from "../connections/RemoteConnection.js";
-import { RemoteSession } from "../connections/RemoteSession.js";
+import { RemoteConnection, type ConnectionSession } from "../connections/RemoteConnection.js";
 import { handleHttpRoute } from "./routes.js";
+
+export type SessionContext = {
+	id: string;
+	remoteAddress?: string;
+	/** Send one envelope to this connection; sequence numbers are assigned here. */
+	send: (type: string, payload?: unknown, requestId?: string) => void;
+};
 
 export type RemoteServerOptions = {
 	config: RemoteConfig;
 	logger: Logger;
-	adapter: PiRemoteAdapter;
 	deviceTrust: DeviceTrust;
 	/** TLS certificate + key; clients pin `identity.fingerprint`. */
 	identity: HostIdentity | (() => HostIdentity);
-	getState: () => RemoteStateSnapshot;
-	questions?: QuestionBroker;
+	/** Protocol handler for one WebSocket connection. */
+	createSession: (context: SessionContext) => ConnectionSession;
 };
 
 export class RemoteServer {
 	private config: RemoteConfig;
 	private readonly logger: Logger;
-	private readonly adapter: PiRemoteAdapter;
 	private readonly deviceTrust: DeviceTrust;
 	private readonly identitySource: HostIdentity | (() => HostIdentity);
 	private identity?: HostIdentity;
-	private readonly getState: () => RemoteStateSnapshot;
-	private readonly questions: QuestionBroker;
+	private readonly createSession: RemoteServerOptions["createSession"];
 	private readonly registry = new ConnectionRegistry();
 	private server?: https.Server;
 	private wss?: WebSocketServer;
@@ -46,11 +46,9 @@ export class RemoteServer {
 	constructor(options: RemoteServerOptions) {
 		this.config = options.config;
 		this.logger = options.logger;
-		this.adapter = options.adapter;
 		this.deviceTrust = options.deviceTrust;
 		this.identitySource = options.identity;
-		this.getState = options.getState;
-		this.questions = options.questions ?? new QuestionBroker();
+		this.createSession = options.createSession;
 	}
 
 	isRunning(): boolean {
@@ -125,7 +123,6 @@ export class RemoteServer {
 			const handled = handleHttpRoute(req, res, {
 				config: this.config,
 				connections: this.registry.size,
-				state: this.getState(),
 			});
 			if (!handled) {
 				res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
@@ -179,10 +176,6 @@ export class RemoteServer {
 		this.registry.broadcast(createServerEnvelope(this.nextSeq(), type, payload));
 	}
 
-	broadcastStateChanged(reason: string): void {
-		this.broadcast("state.changed", { reason, state: this.getState() });
-	}
-
 	private handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
 		const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 		if (url.pathname !== this.config.webSocketPath) {
@@ -199,13 +192,9 @@ export class RemoteServer {
 		this.wss?.handleUpgrade(req, socket, head, (ws) => {
 			const connectionId = randomBytes(12).toString("base64url");
 			let connection!: RemoteConnection;
-			const session = new RemoteSession({
+			const session = this.createSession({
 				id: connectionId,
 				remoteAddress: req.socket.remoteAddress,
-				adapter: this.adapter,
-				deviceTrust: this.deviceTrust,
-				logger: this.logger,
-				questions: this.questions,
 				send: (type, payload, requestId) => connection.send(createServerEnvelope(this.nextSeq(), type, payload, requestId)),
 			});
 			connection = new RemoteConnection({

@@ -44,15 +44,13 @@ function setup({ host = "127.0.0.1" } = {}) {
 	const server = new RemoteServer({
 		config: DEFAULT_REMOTE_CONFIG,
 		logger: createLogger("test"),
-		adapter: { getState: () => ({ isIdle: true }) },
 		deviceTrust,
 		identity,
-		questions,
-		getState: () => ({ isIdle: true }),
+		createSession: () => ({ handle: async () => {}, isAuthenticated: () => false, authenticatedDeviceId: () => undefined }),
 	});
 	const advertiser = fakeAdvertiser();
 	const lan = { host };
-	const runtime = new RemoteControlRuntime(server, deviceTrust, { start: async () => null, stop: async () => {}, getHandle: () => null }, createLogger("test"), questions, {
+	const runtime = new RemoteControlRuntime(server, deviceTrust, createLogger("test"), questions, {
 		advertiser,
 		selectHost: () => lan.host ?? undefined,
 		getCwd: () => "/tmp/project-x",

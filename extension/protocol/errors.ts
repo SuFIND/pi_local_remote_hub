@@ -9,6 +9,9 @@ export type ProtocolErrorCode =
 	| "AGENT_BUSY"
 	| "COMMAND_FAILED"
 	| "PAYLOAD_TOO_LARGE"
+	| "NO_SESSION"
+	| "SESSION_UNAVAILABLE"
+	| "OUTSIDE_ROOTS"
 	| "INTERNAL_ERROR";
 
 export type ProtocolErrorPayload = {

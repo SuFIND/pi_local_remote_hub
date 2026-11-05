@@ -1,11 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RemoteConfig } from "../config.js";
-import type { RemoteStateSnapshot } from "../pi/stateSnapshot.js";
 
 export type RouteContext = {
 	config: RemoteConfig;
 	connections: number;
-	state: RemoteStateSnapshot;
 };
 
 export function handleHttpRoute(req: IncomingMessage, res: ServerResponse, context: RouteContext): boolean {
