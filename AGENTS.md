@@ -4,30 +4,28 @@ This file is the entry point for any agent working on `pi-remote-ios`. Read it f
 
 ## What this project is
 
-A two-half system that lets a paired iOS app control an active Pi (`@earendil-works/pi-coding-agent`) terminal session over WebSocket:
+A three-part system that lets a paired iOS app control the Pi (`@earendil-works/pi-coding-agent`) sessions on a Mac over the LAN:
 
-1. **TypeScript Pi extension** (`extension/`) — loaded into a running `pi` process via the project's `.pi/settings.json`. Exposes a `/remote` slash command, runs an HTTP/WebSocket server, owns auth + protocol + Pi event mapping.
-2. **iOS app** (`Pi/`) — native SwiftUI app built on **The Composable Architecture (TCA)**. Connects to the extension over WebSocket, pairs once with a 6-digit code, then drives the session: send prompts, abort, compact, observe streaming assistant output and tool calls.
+1. **Pi Remote Hub** (`hub/`) — one resident Node process per Mac (`node hub/bin.mjs run`, or a launchd agent via `install`). Owns the TLS WebSocket server, Bonjour, pairing and trusted devices; keeps a registry of every running Pi over a local Unix socket; lets the phone browse the shared folders (`hub.json` `roots`), open any saved session, and starts `pi --mode rpc --session …` for it on demand (exits again after `idleExitMinutes`, default 3).
+2. **TypeScript Pi extension** (`extension/`) — loaded into every `pi` process. Registers its session with the hub (`HubLink`), runs forwarded commands against the live session, streams Pi events back, and provides `/remote pair|status|devices|revoke|rotate|takeover`. It never listens on the network.
+3. **iOS app** (`Pi/`) — native SwiftUI app built on **The Composable Architecture (TCA)**. Pairs once with the hub, then picks a session and drives it: send prompts, abort, compact, observe streaming assistant output and tool calls.
 
 User flow:
 
 ```
-$ pi                           # in repo root, loads extension via .pi/settings.json
-> /remote start                # starts the TLS (wss) server on the Pi host's LAN address,
-                               # advertised over Bonjour (_pi-remote._tcp).
-                               # Prints status, 6-digit code, and a QR code encoding a
-                               # pi-remote://pair?url=...&code=... deep link.
+$ node hub/bin.mjs roots add ~/code    # share a folder with the phone
+$ node hub/bin.mjs install             # hub at login (launchd); or `run` in the foreground
+$ node hub/bin.mjs pair                # (or /remote pair in any Pi window) prints status,
+                                       # 6-digit code and a QR deep link pi-remote://pair?url=…&code=…
 
-iPhone: scan QR from Camera or in-app (or tap the Pi under Nearby) → auto-fills + auto-pairs
-                               # the URL carries the certificate pin (#fp=…)
-                               # extension returns one-time device token
-                               # iOS stores the token in Keychain for future reconnects
+iPhone: scan QR (or tap the Mac under Nearby) → pairs; the URL carries the certificate pin (#fp=…)
+                                       # hub returns a one-time device token → iOS Keychain
 
-iPhone: type prompt → Send     # round-trip through WebSocket → Pi → LLM → streaming back
-                               # requires the iPhone and Pi host on the same local network
+iPhone: pick folder → session (terminal / background / stopped) or New session
+iPhone: type prompt → Send             # phone → hub → owning Pi process → LLM → streaming back
 ```
 
-`/remote start` means "running and ready to pair." There is intentionally no separate `/remote pair` command.
+Every `pi` window registers with the hub by itself (start order does not matter); `PI_REMOTE_DISABLE=1` opts a process out. One writer per session: a terminal opening a session that a hub-started Pi holds takes it over (at once if idle, else after the run, then reloads via `/remote takeover`).
 
 ## Repository layout
 
@@ -36,13 +34,24 @@ pi-remote-ios/
 ├── Project.swift           optional Tuist manifest (kept in sync with Pi/Pi.xcodeproj)
 ├── Tuist.swift             shared Tuist configuration
 ├── Tuist/Package.swift     external Swift package dependencies (Tuist path)
-├── extension/              TypeScript Pi extension (server side)
-│   ├── index.ts            thin entry point
-│   ├── command.ts          /remote command handler + UI notifications
+├── hub/                    Pi Remote Hub (resident LAN server)
+│   ├── bin.mjs, main.ts    CLI: run | install | uninstall | status | pair | devices | revoke | roots | idle
+│   ├── HubService.ts       composition: TLS server + Bonjour + trust + AgentHub + spawner + idle exit
+│   ├── AgentHub.ts         Unix-socket registry of Pi processes, request routing, follow/handoff
+│   ├── PhoneSession.ts     one phone: auth, hub.* browsing, attach, wake stopped sessions
+│   ├── AgentSpawner.ts     `pi --mode rpc` child processes (dialogs auto-cancelled)
+│   ├── SessionCatalog.ts, SessionIndex.ts  folders/sessions under the roots; incremental JSONL index
+│   ├── HubConfig.ts        hub.json (roots, idleExitMinutes, port, piCommand, piArgs)
+│   └── launchd.ts, controlClient.ts
+├── extension/              TypeScript Pi extension (runs in every Pi process)
+│   ├── index.ts            entry point: HubLink per session, event stream, remote_question
+│   ├── command.ts          /remote command (talks to the hub's control ops)
+│   ├── agent/              HubLink (Unix socket to the hub) + SessionCommands (forwarded commands)
+│   ├── hubwire/            NDJSON frames between hub and Pi processes
 │   ├── config.ts           defaults + env overrides
-│   ├── runtime/            RemoteControlRuntime (start/stop/status/rotate)
-│   ├── server/             HTTP + WebSocket upgrade lifecycle
-│   ├── connections/        RemoteConnection (socket lifecycle) + RemoteSession (auth + commands)
+│   ├── runtime/            RemoteControlRuntime (listen/stop/status/rotate, LAN follow, Bonjour) — used by the hub
+│   ├── server/             HTTP + WebSocket upgrade lifecycle — used by the hub
+│   ├── connections/        RemoteConnection (socket lifecycle; protocol via a ConnectionSession)
 │   ├── auth/               DeviceTrust + PairingManager + TokenStore + TrustStore (shared trust file) + crypto
 │   ├── identity/           self-signed TLS host certificate + fingerprint (HostIdentity, certificate)
 │   ├── net/                LAN address selection/peer filter + Bonjour advertiser (dns-sd)
@@ -52,10 +61,9 @@ pi-remote-ios/
 │   ├── events/             RemoteEventStream (Pi event subscription + broadcast)
 │   ├── questions/          remote_question tool + reconnect-safe QuestionBroker
 │   ├── session/            structured phase monitor + run evidence collector
-│   ├── tunnel/             dormant legacy Cloudflare tunnel implementation
 │   └── logging/            structured logger
 │
-├── test/                   Node test suite for the extension (decoder/auth/integration)
+├── test/                   Node test suite (decoder/auth/session index/hub integration)
 │
 ├── docs/
 │   ├── PROTOCOL.md         full wire protocol spec
@@ -101,31 +109,35 @@ pi-remote-ios/
 
 | Module | Owns |
 |---|---|
-| `RemoteControlRuntime` | `start`/`stop`/`getStatus`/`rotateTrust`/`revokeDevice` semantics; the invariant that "/remote start" means running + ready to pair (autostart uses `start({pairing:false})`). Follows LAN address changes and keeps Bonjour in sync. |
+| `HubService` | The hub: composes `RemoteServer` + `RemoteControlRuntime` + `DeviceTrust` + `AgentHub` + `AgentSpawner` + `SessionCatalog`; control ops (`status`, `pair`, `devices`, `revoke`, `rotate`); idle exit of hub-started Pi; LAN listen retry. |
+| `AgentHub` | Unix socket (`hub.sock`, 0600). Registers Pi processes (`hello`), routes phone requests (`request`/`reply` with per-request ids), fans events out to attached phones, replays an open question on attach, follows a Pi window across session switches (same pid re-registers), and enforces one writer per session (idle handoff at once, busy handoff after the run). |
+| `PhoneSession` | One phone connection: auth, `hub.listProjects/listSessions/listFolders/openSession/newSession/detach`, roots checks, answers stopped sessions from disk, wakes Pi on demand. |
+| `AgentSpawner` | Starts `pi [piArgs] --mode rpc [--session f]` with `PI_REMOTE_SPAWN_TOKEN`, cancels RPC dialog requests, stops via stdin EOF → SIGTERM → SIGKILL. |
+| `SessionIndex` | Incremental, read-only index of Pi's session JSONL files (per-file size/mtime/offset; parses appended bytes only). Results match `SessionManager.listAll`. |
+| `HubLink` | Extension side of the hub socket: hello with session + state, reconnect every 3 s, control requests, viewer count, notices (`handoffReady` triggers `/remote takeover`). |
+| `SessionCommands` | Executes forwarded `session.*` / `interaction.answer` against `PiRemoteAdapter` + `QuestionBroker` inside the owning Pi process. |
+| `RemoteControlRuntime` | `start`/`stop`/`getStatus`/`rotateTrust`/`revokeDevice` for the hub's listener. Follows LAN address changes and keeps Bonjour in sync. |
 | `DeviceTrust` | Pairing window, code validation, token issue/verify, trusted device list, revocation. Wraps internal `PairingManager` + `TokenStore` over a `TrustStore`. |
 | `TrustStore` | `FileTrustStore` persists `{secret, devices[tokenHash…]}` to the shared, re-read-on-every-call `trusted-devices.json` (0600; corrupt → moved aside, fail closed). `MemoryTrustStore` for tests. |
 | `HostIdentity` | Loads or creates the shared self-signed ECDSA P-256 TLS identity and computes its pin (`certificateFingerprint`). |
 | `lanAddress` | Picks the private LAN IPv4 to bind (`--host auto`) and filters peers to private/loopback ranges. |
 | `BonjourAdvertiser` | Registers `_pi-remote._tcp` via a watchdogged `dns-sd -R` child (macOS only) with TXT `v, fp, host, port, path, proj, cwd`. |
-| `RemoteSettings` | `{autoStart}` in `settings.json` next to the trust file. |
 | `ProtocolDecoder` | Decodes raw WebSocket frames into typed `ClientMessage`. Validates protocolVersion, type, payload shape. |
-| `RemoteConnection` | One client's WebSocket lifecycle only — hello, frame receive, heartbeat, auth timeout, close cleanup. Delegates protocol to `RemoteSession`. |
-| `RemoteSession` | One client's auth state + authenticated command dispatch (`interaction.answer`, `session.getState`, `session.history`, `session.prompt`, `session.abort`, `session.compact`, `session.listModels`, `session.listSkills`, `session.setModel`, `session.setThinkingLevel`, `connection.ping`). |
-| `RemoteServer` | HTTPS (TLS ≥ 1.2) + WebSocket upgrade server, peer-address filter, connection registry, sequence numbers, authenticated-client broadcast, per-device disconnect. |
+| `RemoteConnection` | One client's WebSocket lifecycle only — hello, frame receive, heartbeat, auth timeout, close cleanup. Delegates protocol to a `ConnectionSession` (the hub's `PhoneSession`). |
+| `RemoteServer` | HTTPS (TLS ≥ 1.2) + WebSocket upgrade server, peer-address filter, connection registry, sequence numbers, per-device disconnect. Sessions come from a `createSession` factory. |
 | `PiRemoteAdapter` | Seam around Pi's active session operations. Owns state/history, prompt delivery, model/thinking changes, abort, compact, and execution context. Registration modules use only Pi's command, tool, or event registration surfaces. |
 | `RemoteEventStream` | Subscribes to Pi events (`message_*`, `tool_execution_*`, `agent_*`, …), maps to stable `pi.*` types, broadcasts only to authenticated clients, drives structured phase changes, and emits run completion evidence after `agent_settled`. Also attaches edit/write diffs to matching `pi.tool_end` events. |
 | `editPayload` | Pure helper: `extractEditPayload(toolResultEvent)` lifts Pi's own diff for `edit`, `synthesizeWriteDiff(toolResultEvent)` builds an all-added `/dev/null` diff for `write`. Both bypass the sanitizer's 20K-char cap on the `diff` field so the iOS app can render whole diffs regardless of size. |
 | `QuestionBroker` | Owns one bounded pending `remote_question`, restores it after token reconnect, and resolves answer, abort, timeout, or server stop. |
 | `RemoteSessionMonitor` | Tracks `idle`, `running`, `queued`, `compacting`, `needsInput`, `completed`, and `failed` phases. |
 | `RunEvidenceCollector` | Accumulates bounded command outcomes, tool failures, and changed-file statistics until `agent_settled`. |
-| `CloudflareTunnel` | Legacy tunnel implementation retained in source. `/remote start` does not activate it. |
 
 ### Wire protocol (summary; full spec in `docs/PROTOCOL.md`)
 
 - WebSocket at `/v1/ws`, JSON envelopes, `protocolVersion: 1`.
 - Server envelope: `{ id?, seq, type, protocolVersion, timestamp, payload }`.
 - Client envelope: `{ id?, type, protocolVersion, payload }`.
-- Connection state machine: connect → `server.hello` → `auth.pair.request` (with code) **or** `auth.token` → `auth.*.success` + `state.snapshot` → live commands/events.
+- Connection state machine: connect → `server.hello` → `auth.pair.request` (with code) **or** `auth.token` → `auth.*.success` (`state: null`, `hub.roots`) → `hub.*` browsing → `hub.openSession` / `hub.newSession` → live `session.*` commands/events for that session; `hub.attached` / `hub.sessionStatus` when it moves or stops.
 - Stable `response.ok` shape: `{ ok, command, result }`.
 - State-changing commands emit `state.changed` after `response.ok`.
 - Pi events come through as `pi.<name>` with payload `{ source: "pi", name, data }`.
@@ -135,14 +147,15 @@ pi-remote-ios/
 
 ### Security invariants
 
-- `/remote start` binds only the private LAN address (or `--host`), serves TLS, and drops peers outside private/loopback ranges.
-- The TLS identity and trusted devices live in `~/.pi/agent/pi-remote/` (dir 0700, secrets 0600) and are shared by all Pi windows; revocation is seen everywhere within one heartbeat.
+- The hub binds only the private LAN address, serves TLS, and drops peers outside private/loopback ranges. Pi processes never listen on the network.
+- The TLS identity, trusted devices, `hub.json` and `hub.sock` live in `~/.pi/agent/pi-remote/` (dir 0700, secrets and socket 0600).
+- The phone can only browse, open and create sessions inside `roots` (symlink-resolved); the hub never writes session files and only stops Pi processes it started (never mid-run).
 - Unauthenticated clients can only receive `server.hello`, send `connection.ping`, or auth.
 - Pi event broadcasts go only to authenticated connections.
 - Pairing code expires after 2 minutes; 5 failed attempts disable the code; successful pair disables the code.
 - Tokens are high-entropy and returned once. Server stores only `sha256(token + serverSecret)`.
 - The iOS app stores its issued token and pinned URL in Keychain, pins the leaf certificate (TOFU when the URL has no `#fp=`), and refuses `ws://` to non-loopback hosts.
-- Autostart never opens a pairing window.
+- The hub never opens a pairing window by itself; `pair` is explicit.
 - Sanitizer caps payloads at 20K-char strings, 200-item arrays, depth 8; redacts known secret keys.
 
 ### Running
@@ -152,13 +165,11 @@ npm install
 npm run typecheck     # tsc --noEmit
 npm test              # node --test test/*.test.mjs
 
-pi                    # from repo root, loads extension via .pi/settings.json
-> /remote start            # LAN (TLS + Bonjour); iPhone and Pi host must share a network
-> /remote devices | revoke <id> | rotate | autostart on|off
-                           # logs are silent by default — pass --logs to see
-                           # connect/disconnect/auth events for debugging
-> /remote start --host 127.0.0.1  # Simulator-only loopback
-> /remote start --logs     # enable structured JSON logs for this session
+node hub/bin.mjs run  # hub in the foreground (JSON logs on stderr); PI_REMOTE_STATE_DIR isolates state
+node hub/bin.mjs roots add <dir> | pair | status | devices | revoke <id> | idle <min>
+
+pi                    # from repo root, loads extension via .pi/settings.json; registers with the hub
+> /remote pair | status | devices | revoke <id> | rotate | takeover
 ```
 
 ## iOS app
@@ -266,7 +277,7 @@ The `PiUITests` target uses XCTest UI automation under the `PiE2E` scheme. `scri
 
 ### TypeScript extension
 
-- One concept per module file. `RemoteSession` does not touch sockets; `RemoteConnection` does not interpret protocol; `PiRemoteAdapter` is the only place that executes active Pi session operations. Registration modules may call `registerCommand`, `registerTool`, or `on`.
+- One concept per module file. `PhoneSession` does not touch sockets; `AgentHub` does not interpret session commands; `RemoteConnection` does not interpret protocol; `PiRemoteAdapter` is the only place that executes active Pi session operations. Registration modules may call `registerCommand`, `registerTool`, or `on`.
 - No legacy `extensions/` directory — source is in `extension/`.
 - Wire-format changes require parallel updates to the iOS `Core/Protocol/` types.
 - Run `npm run typecheck` after any change. Run `npm test` for protocol/auth/runtime/event-stream changes.

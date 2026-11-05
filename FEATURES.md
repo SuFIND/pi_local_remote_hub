@@ -24,12 +24,20 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 - Keeps prompts, responses, commands, paths, and credentials out of system activity and notification content.
 - Keeps sensitive session content out of stored diagnostic records.
 
+## Pi Remote Hub
+
+- Runs as one resident process per Mac (foreground, or a launchd login item).
+- Runs the authenticated TLS WebSocket server, binds the LAN address, and advertises it over Bonjour.
+- Generates an expiring pairing code and QR link on request (`pair`).
+- Lists the folders and Pi sessions inside the configured shared folders, live or saved.
+- Opens any of those sessions, answers history from disk while stopped, and starts Pi for it on demand.
+- Starts new sessions in a shared folder; hub-started Pi exits after three idle minutes.
+- Follows a Pi window across session switches and hands sessions over to a terminal that opens them.
+
 ## Pi extension
 
-- Adds the `/remote start`, `/remote stop`, `/remote status`, and `/remote rotate` commands to Pi.
-- Runs an authenticated WebSocket server for the active Pi process.
-- Binds to the local network by default and advertises the host’s LAN address.
-- Generates an expiring pairing code and pairing link when remote control starts.
+- Registers every Pi process with the hub over a local socket; never listens on the network.
+- Adds `/remote pair`, `status`, `devices`, `revoke`, `rotate`, and `takeover` to Pi.
 - Issues a one-time device token after successful pairing.
 - Verifies returning devices by token and supports immediate trust rotation.
 - Restricts unauthenticated connections to pairing, token authentication, and ping messages.
@@ -39,7 +47,7 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 - Expands explicit skill commands before sending them to Pi.
 - Registers a `remote_question` tool for decisions that require user input.
 - Preserves active questions across phone reconnects.
-- Uses terminal input when a question starts while remote control is stopped.
+- Uses terminal input when a question starts while no phone is attached.
 - Publishes structured session phases and execution context from Pi lifecycle events.
 - Streams assistant, tool, and session events only to authenticated devices.
 - Builds bounded completion evidence from tool metadata instead of assistant claims.

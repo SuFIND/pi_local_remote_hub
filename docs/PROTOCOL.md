@@ -4,7 +4,7 @@ Protocol version: `1`.
 
 Transport: WebSocket over TLS (`wss://`) at `/v1/ws`. The host certificate is self-signed; clients pin it (see [Host identity and discovery](#host-identity-and-discovery)). Plain `ws://` is only for loopback test servers.
 
-`/remote start` starts the server and enables a short-lived pairing code. There is intentionally no separate `/remote pair` command.
+The server is the **Pi Remote Hub**, one process per Mac (`node hub/bin.mjs run`, or a launchd agent after `install`). `node hub/bin.mjs pair` or `/remote pair` in any Pi window opens a short-lived pairing code. After authentication the phone browses the shared folders and attaches to one session at a time ([Hub commands](#hub-commands)); every `session.*` command and Pi event then refers to that session.
 
 ## Server envelope
 
@@ -67,12 +67,13 @@ Server sends `server.hello`:
     },
     "capabilities": {
       "authMethods": ["pairingCode", "deviceToken"],
-      "commands": ["interaction.answer", "session.getState", "session.history", "session.prompt", "session.abort", "session.compact", "session.listModels", "session.listSkills", "session.setModel", "session.setThinkingLevel"],
+      "commands": ["hub.listProjects", "hub.listSessions", "hub.listFolders", "hub.openSession", "hub.newSession", "hub.detach", "interaction.answer", "session.getState", "session.history", "session.prompt", "session.abort", "session.compact", "session.listModels", "session.listSkills", "session.setModel", "session.setThinkingLevel"],
       "features": {
         "sequenceNumbers": true,
         "stableOkEnvelope": true,
         "stateChangedEvents": true,
-        "authenticatedPiEventsOnly": true
+        "authenticatedPiEventsOnly": true,
+        "hub": true
       }
     }
   }
@@ -109,21 +110,15 @@ Server replies:
       "createdAt": "...",
       "lastSeenAt": "..."
     },
-    "state": {}
+    "state": null,
+    "hub": { "roots": ["/Users/me/code"] }
   }
 }
 ```
 
-Store `token` in iOS Keychain. The server stores only a token hash, in the shared trust file (`~/.pi/agent/pi-remote/trusted-devices.json`), so the token survives `/reload`, Pi restarts, and other Pi windows on the same host. `/remote revoke` or `/remote rotate` invalidates it.
+Store `token` in iOS Keychain. The hub stores only a token hash, in `~/.pi/agent/pi-remote/trusted-devices.json`, so the token survives hub and Mac restarts. `/remote revoke` or `/remote rotate` invalidates it.
 
-After auth, server also emits:
-
-```json
-{
-  "type": "state.snapshot",
-  "payload": { "state": {} }
-}
-```
+`state` is `null` because no session is attached yet; there is no `state.snapshot` after auth. Open a session with `hub.openSession` or `hub.newSession`.
 
 ### 2B. Reconnect with token
 
@@ -148,10 +143,49 @@ Server replies:
   "type": "auth.token.success",
   "payload": {
     "device": {},
-    "state": {}
+    "state": null,
+    "hub": { "roots": ["/Users/me/code"] }
   }
 }
 ```
+
+A reconnecting client re-opens the session it was showing (`hub.openSession` with the saved path).
+
+## Hub commands
+
+The phone only sees folders inside the hub's configured `roots`; anything else fails with `OUTSIDE_ROOTS`. Paths are absolute. Session `status` is `terminal` (a Pi window owns it), `background` (the hub started Pi for it) or `stopped` (saved on disk, no Pi running).
+
+### `hub.listProjects`
+
+`{}` → `{ "roots": [...], "projects": [{ "path", "name", "root", "sessionCount", "running", "lastActivity"? }] }`. Each root, its direct subfolders, and every deeper folder that has sessions, sorted by running sessions, then recent activity.
+
+### `hub.listSessions`
+
+`{ "cwd": "/Users/me/code/app" }` → `{ "cwd", "sessions": [{ "path", "id"?, "name"?, "firstMessage", "modified"?, "messageCount", "status", "busy" }] }`. Live sessions first, then newest. A brand-new live session with nothing on disk yet is included with `messageCount: 0`.
+
+### `hub.listFolders`
+
+`{ "path": "/Users/me/code" }` → `{ "path", "folders": [{ "path", "name" }] }`. Visible subfolders only; files are never listed.
+
+### `hub.openSession`
+
+`{ "sessionPath": "/…/session.jsonl" }` → `{ "session": { "path", "cwd", "name"?, "status" }, "state": {…} }`, or `SESSION_UNAVAILABLE` when the file is not a session in the shared folders. Attaching to a running session replays an open `interaction.question`. For a `stopped` session `state` is read from the file; `session.history`, `session.getState` and `session.abort` are answered from disk, and any other command starts Pi for it first (`hub.sessionStatus` with `reason: "started"`, then the command's own response).
+
+### `hub.newSession`
+
+`{ "cwd": "/Users/me/code/app" }` → same result as `hub.openSession`, with `status: "background"`. Starts `pi --mode rpc` in that folder.
+
+### `hub.detach`
+
+`{}` → `{ "detached": true }`. Stop receiving the session's events.
+
+### Hub events
+
+| Event | Payload | Meaning |
+|---|---|---|
+| `hub.attached` | `{ reason: "replaced", session, state }` | The attached session moved to another Pi process: the Pi window switched session (`/new`, `/resume`, `/fork`), a terminal took it over from the hub, or a terminal opened the stopped session this phone is showing. Reload history. |
+| `hub.sessionStatus` | `{ reason: "started" \| "idle" \| "exited", session }` | `started`: the hub started Pi for this session. `idle`: hub-started Pi exited after `idleExitMinutes` without work. `exited`: the Pi window closed. The phone stays on the session (now `stopped`); the next command starts Pi again. |
+| `hub.detached` | `{ reason }` | The Pi process went away and its session has no file to fall back to. |
 
 ## Stable `response.ok`
 
@@ -432,7 +466,7 @@ Response: `connection.pong`.
 
 ## Blocking questions
 
-The extension registers a sequential `remote_question` tool. When `/remote start` is running, a tool call emits this authenticated event and waits for `interaction.answer`:
+The extension registers a sequential `remote_question` tool. While a phone is attached to the session, a tool call emits this event to the attached phones and waits for `interaction.answer`:
 
 ```json
 {
@@ -452,7 +486,7 @@ The extension registers a sequential `remote_question` tool. When `/remote start
 }
 ```
 
-A pending question remains in extension memory and is sent again after token reconnect. Agent abort, timeout, or `/remote stop` resolves it with a null answer. Resolution event:
+A pending question remains in the Pi process; the hub replays it to every phone that attaches to the session later. Agent abort, timeout, or the Pi process ending resolves it with a null answer. Resolution event:
 
 ```json
 {
@@ -556,11 +590,11 @@ Notes:
 }
 ```
 
-Stable error codes are listed in `extension/protocol/errors.ts`.
+Stable error codes are listed in `extension/protocol/errors.ts`. Hub-specific ones: `NO_SESSION` (a `session.*` command before `hub.openSession`), `SESSION_UNAVAILABLE` (unknown session, or its Pi exited before answering), `OUTSIDE_ROOTS` (folder not shared with the phone).
 
 ## Pairing deep link (QR display)
 
-`/remote start` also prints a QR code encoding a deep link with the same WebSocket URL and pairing code shown in the textual status block:
+`node hub/bin.mjs pair` and `/remote pair` also print a QR code encoding a deep link with the same WebSocket URL and pairing code shown in the textual status block:
 
 ```
 pi-remote://pair?url=<percent-encoded wss url including #fp=<pin>>&code=<6-digit-code>
@@ -570,9 +604,9 @@ This is a UX convenience for iOS clients that implement a QR scanner — it carr
 
 ## Host identity and discovery
 
-- **Pin:** base64url (no padding, 43 chars) SHA-256 of the leaf certificate's DER. The short display form is the first 8 bytes as uppercase hex in groups of 4 (`6AFB 984A 305D 1BF3`), printed as `Fingerprint:` by `/remote start` and `/remote status`.
-- **Shared identity:** every Pi window on a host uses the same certificate, so one pin covers all of them.
-- **Bonjour:** on macOS each running server registers `_pi-remote._tcp` (instance `Pi · <project>`). TXT keys:
+- **Pin:** base64url (no padding, 43 chars) SHA-256 of the leaf certificate's DER. The short display form is the first 8 bytes as uppercase hex in groups of 4 (`6AFB 984A 305D 1BF3`), printed as `Fingerprint:` by `/remote pair` and `/remote status`.
+- **One identity:** the hub's certificate lives in `~/.pi/agent/pi-remote/`, so the pin is stable across restarts.
+- **Bonjour:** on macOS the hub registers `_pi-remote._tcp` (instance `Pi · <Mac name>`). TXT keys:
 
 | Key | Value |
 |---|---|
@@ -590,7 +624,7 @@ Clients build `wss://<host>:<port><path>#fp=<fp>` from a record, and accept it o
 
 | Code | Reason | Meaning |
 |---:|---|---|
-| 1001 | `Server shutting down` | `/remote stop`, Pi shutdown, reload, or server restart. |
+| 1001 | `Server shutting down` | The hub stopped or restarted. |
 | 4000 | `Heartbeat timeout` | Client stopped responding to ping/pong or messages. |
 | 4001 | `Authentication timeout` | Client did not authenticate within the auth timeout window. |
-| 4003 | `Device revoked` | The device was revoked (`/remote revoke`, `/remote rotate`), possibly from another Pi window. Forget the token and re-pair. |
+| 4003 | `Device revoked` | The device was revoked (`/remote revoke`, `/remote rotate`), Forget the token and re-pair. |

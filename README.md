@@ -7,12 +7,14 @@
 [![CI](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml/badge.svg)](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
 
-Control an active [Pi](https://pi.dev) coding-agent session from a native iPhone app.
+Control the [Pi](https://pi.dev) coding-agent sessions on your Mac from a native iPhone app.
 
-This repository contains both required halves:
+This repository contains all three parts:
 
-- a TypeScript Pi extension that exposes a paired WebSocket endpoint;
-- a SwiftUI iOS app that connects, authenticates, and controls the active session.
+- **Pi Remote Hub** (`hub/`): one resident process per Mac that serves the phone
+  on the LAN (TLS, Bonjour, pairing) and starts Pi for sessions the phone opens;
+- a TypeScript **Pi extension** that registers every Pi window with the hub;
+- a SwiftUI **iOS app** that connects, authenticates, and controls a session.
 
 > [!WARNING]
 > A paired phone can submit prompts that cause Pi to run shell commands. Treat
@@ -26,8 +28,9 @@ with or endorsed by Earendil Inc.
 The project is an early preview. The extension works as a Pi package, while the
 iOS app currently requires an Xcode build from source.
 
-It controls the active interactive Pi session. It does not run a background Pi
-daemon or manage multiple sessions.
+The phone pairs once with the hub, browses the folders you share, and opens any
+Pi session in them: one running in a terminal, or a saved one that the hub
+resumes in the background (and stops again after three idle minutes).
 
 ## iOS app
 
@@ -84,17 +87,21 @@ daemon or manage multiple sessions.
 
 ```text
 iPhone app
-    │ paired WebSocket protocol
+    │ wss:// on the LAN (pinned TLS, paired token)
     ▼
-Pi extension inside the active terminal process
-    │ Pi extension API
-    ▼
-Current Pi session
+Pi Remote Hub  (launchd agent, ~/.pi/agent/pi-remote/)
+    │ Unix socket hub.sock (0600)            starts `pi --mode rpc --session …`
+    ▼                                         ▼
+Pi windows in your terminals            hub-started Pi (no terminal)
+    └──────── Pi Remote extension in every Pi process ────────┘
 ```
 
-The extension validates every incoming envelope, authenticates each connection,
-and sends Pi events only to authenticated clients. The protocol is versioned
-and documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+The hub validates every incoming envelope, authenticates each connection, and
+routes a phone's commands to the Pi process that owns the session it opened.
+Each session has one writer: when you open a session in a terminal that the hub
+is running for the phone, the terminal takes over (immediately if idle, after
+the current run otherwise, reloading the newest messages by itself). The
+protocol is versioned and documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 When a user sends a prompt, the iOS app submits an iOS 26 continued-processing
 task. The system provides a Live Activity while the app monitors the run in the
@@ -120,7 +127,7 @@ restored. Pi continues running on the host computer. This local-only path does n
 
 The iPhone and Pi host must share a local network. On Linux, allow inbound TCP traffic on port `3769`. On macOS, allow incoming connections for `node` when the firewall asks.
 
-Pi binds its private LAN address (preferring `en0`) and skips VPN, bridge, and container interfaces. If it still picks the wrong one, pass `--host <lan-ip>`.
+The hub binds the Mac's private LAN address (preferring `en0`), skips VPN, bridge, and container interfaces, and follows the address when it changes.
 
 ## Install the Pi extension
 
@@ -156,6 +163,25 @@ pi -e ./extension/index.ts
 The repository also includes `.pi/settings.json`, so running `pi` from its root
 loads the local extension automatically.
 
+## Run the hub
+
+The hub needs the same checkout (or package install) as the extension. From the
+repository root:
+
+```bash
+node hub/bin.mjs roots add ~/code      # share a folder: its sessions and subfolders
+node hub/bin.mjs install               # run at login (launchd) and start now
+node hub/bin.mjs pair                  # 2-minute pairing code + QR
+```
+
+`node hub/bin.mjs run` runs it in the foreground instead of installing it, and
+`uninstall` removes the login item. The configuration lives in
+`~/.pi/agent/pi-remote/hub.json` (`roots`, `idleExitMinutes` = 3, `port` = 3769,
+`piCommand`, extra `piArgs` for hub-started Pi); the hub reloads it on change.
+Logs go to `~/.pi/agent/pi-remote/hub.log`.
+
+Pi windows find the hub on their own; start the hub before or after them.
+
 ## Build the iOS app
 
 The iOS app is source-only. You need an Apple ID that Xcode can use for device signing.
@@ -180,22 +206,17 @@ xcodebuild -project Pi/Pi.xcodeproj \
   build
 ```
 
-The Simulator does not provide the VisionKit camera scanner. Use manual pairing with `/remote start --host 127.0.0.1`.
+The Simulator does not provide the VisionKit camera scanner. Pair by pasting the `wss://` URL printed by `node hub/bin.mjs pair` and entering the code.
 
 `Project.swift` + `Tuist/` remain for optional Tuist users (`tuist generate` writes `Pi.xcworkspace` at the repo root). Keep package pins in both places in sync.
 
 ## Pair and connect
 
-Start Pi, then run:
-
-```text
-/remote start
-```
-
-Pi binds a TLS WebSocket server (`wss://`) to the host's private LAN address and
-advertises it over Bonjour (`_pi-remote._tcp`). It prints the URL with the
-certificate pin (`#fp=…`), the short host fingerprint, a short-lived pairing
-code, and a QR deep link.
+Run `node hub/bin.mjs pair` (or `/remote pair` in any Pi window). The hub serves
+a TLS WebSocket (`wss://`) on the Mac's private LAN address and advertises it
+over Bonjour (`_pi-remote._tcp`). Pairing prints the URL with the certificate
+pin (`#fp=…`), the short host fingerprint, a short-lived pairing code, and a QR
+deep link.
 
 Scan the QR code from the Pi Remote pairing screen or with the iPhone Camera
 app. Or tap the Pi under **Nearby** (or paste the printed `wss://` URL), enter
@@ -204,38 +225,29 @@ with the `Fingerprint:` line in Pi.
 
 The pairing code expires after two minutes and stops working after one success.
 
-The TLS identity and trusted devices live in `~/.pi/agent/pi-remote/` and are
-shared by every Pi window, so a paired iPhone survives `/reload` and restarts.
-When the Mac's IP changes, Pi rebinds and the app finds it again by fingerprint
-over Bonjour.
+The TLS identity and trusted devices live in `~/.pi/agent/pi-remote/`, so a
+paired iPhone survives hub and Mac restarts. When the Mac's IP changes, the hub
+rebinds and the app finds it again by fingerprint over Bonjour.
 
 Traffic is encrypted, and the app pins the host certificate, so a LAN peer can
 neither read the session nor impersonate the Mac. A paired phone still has
 terminal-equivalent control: do not use port forwarding or an Internet tunnel.
 
-`/remote autostart on` resumes the server in every interactive Pi session for
-already-paired devices; pairing a new device still needs `/remote start`.
-
-For Simulator-only loopback access:
-
-```text
-/remote start --host 127.0.0.1
-```
-
 ## Remote commands
 
+In any Pi window:
+
 ```text
-/remote status
-/remote stop
+/remote status                      hub address, shared folders, Pi sessions online
+/remote pair                        pairing code + QR
 /remote devices
 /remote revoke <device-id-prefix>
-/remote rotate
-/remote autostart on|off
+/remote rotate                      revoke every device
+/remote takeover                    reload this window's session from disk
 ```
 
-`/remote stop` closes remote access without revoking trusted devices. `/remote revoke` removes one device and disconnects it in every Pi window. `/remote rotate` revokes every device.
-
-If the app reports an outdated extension, run `/reload` and then `/remote start`.
+The same management commands exist on the CLI: `node hub/bin.mjs status|pair|devices|revoke <id>|roots [add|remove <dir>]|idle <minutes>`.
+Set `PI_REMOTE_DISABLE=1` to keep one Pi process from registering with the hub.
 
 ## Development
 
@@ -256,9 +268,10 @@ xcodebuild -project Pi/Pi.xcodeproj \
   test
 ```
 
-The extension test suite covers protocol decoding, authentication, tunnel
-lifecycle, event mapping, question recovery, run evidence, diff payloads, and
-WebSocket integration.
+The test suite covers protocol decoding, authentication, event mapping,
+question recovery, run evidence, diff payloads, the session index, and hub
+integration (phones over pinned `wss://`, Pi processes over the hub socket,
+background start, idle exit, session switches, and terminal handoff).
 
 Run the full iOS E2E test against a real Pi process and configured model:
 

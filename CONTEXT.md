@@ -4,11 +4,27 @@
 
 ### Pi Remote
 
-The local-first remote-control system that lets a paired client control an active Pi session over WebSocket.
+The local-first remote-control system that lets a paired client control the Pi sessions on one Mac over the LAN.
 
-### Active Pi session
+### Pi Remote Hub
 
-The currently running Pi interactive session that the extension is loaded into. Phase 1 controls this session only; it does not manage headless multi-session daemon workflows.
+The one resident process per Mac that owns the LAN listener, pairing and trusted devices, knows every running Pi process (they register over a local socket), and starts Pi for sessions the phone opens.
+
+### Shared folders (roots)
+
+The folders listed in `hub.json`. The phone can browse, open and create sessions only inside them.
+
+### Attached session
+
+The one session a phone connection is currently looking at. Its status is **terminal** (a Pi window owns it), **background** (a hub-started Pi owns it) or **stopped** (saved on disk; the next command starts Pi for it).
+
+### Hub-started Pi
+
+A `pi --mode rpc` process the hub launched for a phone. It exits after `idleExitMinutes` without work and is never stopped mid-run.
+
+### Handoff
+
+Moving a session from a hub-started Pi to a terminal that opened it, so a session has one writer. Immediate when idle; after the current run otherwise, followed by `/remote takeover` in the terminal.
 
 ### Remote client
 
@@ -16,7 +32,7 @@ A client application, primarily the native iOS app, connected to the Pi Remote W
 
 ### Pairing window
 
-The short-lived state created by `/remote start` during which a new remote client can exchange the displayed pairing code for a device token.
+The short-lived state created by `pair` (`node hub/bin.mjs pair` or `/remote pair`) during which a new remote client can exchange the displayed pairing code for a device token.
 
 ### Device Trust
 
@@ -24,15 +40,15 @@ The domain concept covering how a remote client becomes trusted, reconnects, and
 
 ### Device token
 
-A high-entropy secret returned once after successful pairing. The iOS app stores it in Keychain. The extension stores only a hash in memory.
+A high-entropy secret returned once after successful pairing. The iOS app stores it in Keychain. The hub stores only a hash, in `trusted-devices.json`.
 
 ### Remote Session
 
-The authenticated-or-pairing conversation between one WebSocket connection and the active Pi session. It owns auth state and authenticated command handling.
+The authenticated-or-pairing conversation between one WebSocket connection and the hub (`PhoneSession`). It owns auth state, browsing, and which session the phone is attached to.
 
 ### Remote Runtime
 
-The runtime state behind `/remote start`, `/remote stop`, `/remote status`, and `/remote rotate`. It owns the invariant that `/remote start` means running and ready to pair.
+The hub's listener state: bound LAN address, Bonjour advertisement, pairing window, and trust rotation (`status`, `pair`, `rotate`).
 
 ### Remote Event Stream
 
@@ -40,7 +56,7 @@ The mapped, sanitized, sequenced stream of Pi events sent to authenticated remot
 
 ### Remote Session State
 
-The app-visible state snapshot of the active Pi session: cwd, session file, model, idle/busy status, pending messages, and context usage.
+The app-visible state snapshot of the attached session: cwd, session file, model, idle/busy status, pending messages, and context usage.
 
 ### Connection Reliability
 

@@ -1,6 +1,12 @@
 export const SERVER_CAPABILITIES = {
 	authMethods: ["pairingCode", "deviceToken"],
 	commands: [
+		"hub.listProjects",
+		"hub.listSessions",
+		"hub.listFolders",
+		"hub.openSession",
+		"hub.newSession",
+		"hub.detach",
 		"interaction.answer",
 		"session.getState",
 		"session.history",
@@ -13,6 +19,9 @@ export const SERVER_CAPABILITIES = {
 		"session.setThinkingLevel",
 	],
 	events: [
+		"hub.attached",
+		"hub.sessionStatus",
+		"hub.detached",
 		"state.snapshot",
 		"state.changed",
 		"interaction.question",
@@ -39,6 +48,8 @@ export const SERVER_CAPABILITIES = {
 		stableOkEnvelope: true,
 		stateChangedEvents: true,
 		authenticatedPiEventsOnly: true,
+		/** Sessions are opened with `hub.openSession`; nothing is attached after auth. */
+		hub: true,
 	},
 } as const;
 

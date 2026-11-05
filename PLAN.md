@@ -1,5 +1,8 @@
 # Pi Remote for iOS Architecture Plan
 
+> [!NOTE]
+> Superseded in part: Pi Remote now runs as one resident **Pi Remote Hub** per Mac (`hub/`), and `/remote start`/`stop`/`autostart` are gone. See `AGENTS.md`, `README.md` and `docs/PROTOCOL.md` for the current architecture; the rest of this file is kept as design history.
+
 ## Status
 
 - Phase A — Refactor skeleton: implemented.
