@@ -250,8 +250,31 @@ export class PhoneSession implements ConnectionSession, Viewer {
 	}
 }
 
-/** Re-encode a decoded command for the Pi process (it decodes it again). */
+/**
+ * Re-encode a decoded command in its wire shape for the Pi process, which
+ * decodes it again. Field names follow the wire format, not `ClientMessage`
+ * (e.g. `session.setModel` carries `id`, decoded as `modelId`).
+ */
 export function toForwardedEnvelope(message: ClientMessage): ForwardedEnvelope {
-	const { kind, id: _id, ...payload } = message as ClientMessage & Record<string, unknown>;
-	return { type: kind === "unknown" ? String(payload.type) : kind, protocolVersion: PROTOCOL_VERSION, payload };
+	const envelope = (payload: Record<string, unknown> = {}): ForwardedEnvelope => ({ type: message.kind, protocolVersion: PROTOCOL_VERSION, payload });
+	switch (message.kind) {
+		case "interaction.answer":
+			return envelope({ requestId: message.requestId, answer: message.answer });
+		case "session.prompt":
+			return envelope({ message: message.message, delivery: message.delivery });
+		case "session.history":
+			return envelope(message.limit === undefined ? {} : { limit: message.limit });
+		case "session.setModel":
+			return envelope({ provider: message.provider, id: message.modelId });
+		case "session.setThinkingLevel":
+			return envelope({ level: message.level });
+		case "session.getState":
+		case "session.abort":
+		case "session.compact":
+		case "session.listModels":
+		case "session.listSkills":
+			return envelope();
+		default:
+			throw new ProtocolError("UNKNOWN_COMMAND", `Cannot forward ${message.kind}`);
+	}
 }
