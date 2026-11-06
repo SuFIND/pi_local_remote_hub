@@ -235,7 +235,14 @@ Open the checked-in project. No Tuist or mise is needed:
 open Pi/Pi.xcodeproj
 ```
 
-A free personal team is enough. Under **Signing & Capabilities**, choose your team for the `Pi` target and, if needed, change the bundle identifier (default `com.insanearts.Pi`). Select your iPhone and press **Run**. On the first install, trust the developer under **Settings → General → VPN & Device Management**. Free-team builds expire after seven days; run again from Xcode to renew.
+A free personal team is enough. Put your team and a bundle identifier you own in `Pi/Signing.local.xcconfig` (git ignores it; `Pi/Signing.xcconfig` explains it):
+
+```
+PI_DEVELOPMENT_TEAM = ABCDE12345
+PI_BUNDLE_IDENTIFIER = com.yourname.PiRemote
+```
+
+Choosing a team under **Signing & Capabilities** instead also works, but edits the checked-in project. Select your iPhone and press **Run**. On the first install, trust the developer under **Settings → General → VPN & Device Management**. Free-team builds expire after seven days; run again from Xcode to renew.
 
 Aurora's shader needs the Metal toolchain: `xcodebuild -downloadComponent MetalToolchain`.
 

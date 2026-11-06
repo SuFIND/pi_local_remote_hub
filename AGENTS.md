@@ -267,7 +267,7 @@ xcodebuild -project Pi/Pi.xcodeproj \
            build
 ```
 
-`Pi/Pi.xcodeproj` is checked in and is the default build path (no Tuist needed). It uses synchronized folders for `Pi/Pi/`, `Pi/PiTests/`, and `Pi/PiUITests/`, so new files need no project edits. Schemes: `Pi` (app + PiTests) and `PiE2E` (app + PiUITests). Signing: team `YOUR_TEAM_ID`, bundle IDs `com.insanearts.Pi[Tests|UITests]`. Aurora's shader needs `xcodebuild -downloadComponent MetalToolchain` once.
+`Pi/Pi.xcodeproj` is checked in and is the default build path (no Tuist needed). It uses synchronized folders for `Pi/Pi/`, `Pi/PiTests/`, and `Pi/PiUITests/`, so new files need no project edits. Schemes: `Pi` (app + PiTests) and `PiE2E` (app + PiUITests). Signing: `Pi/Signing.xcconfig` (project level) sets `PI_DEVELOPMENT_TEAM` (empty) and `PI_BUNDLE_IDENTIFIER` (`com.insanearts.Pi`; tests append `Tests`/`UITests`) and includes the git-ignored `Pi/Signing.local.xcconfig` with your own; never commit a team ID or personal bundle ID. Aurora's shader needs `xcodebuild -downloadComponent MetalToolchain` once.
 
 `Project.swift` + `Tuist/` remain for optional Tuist users (`tuist generate` writes the ignored root `Pi.xcworkspace`/`Pi.xcodeproj`). When changing settings or packages, update both.
 

@@ -3,6 +3,7 @@ npm-debug.log*
 
 .DS_Store
 xcuserdata/
+Pi/Signing.local.xcconfig
 *.xcuserstate
 DerivedData/
 /Derived/
