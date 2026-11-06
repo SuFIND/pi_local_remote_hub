@@ -27,3 +27,8 @@ DerivedData/
 /.oss
 /docs.md
 CLAUDE.md
+
+# Pi Hub (macOS menu bar app)
+/mac/build/
+/mac/PiHub/.build/
+/mac/PiHub/.swiftpm/

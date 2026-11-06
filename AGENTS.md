@@ -4,11 +4,12 @@ This file is the entry point for any agent working on `pi-remote-ios`. Read it f
 
 ## What this project is
 
-A three-part system that lets a paired iOS app control the Pi (`@earendil-works/pi-coding-agent`) sessions on a Mac over the LAN:
+A system that lets a paired iOS app control the Pi (`@earendil-works/pi-coding-agent`) sessions on a Mac over the LAN:
 
-1. **Pi Remote Hub** (`hub/`) — one resident Node process per Mac (`node hub/bin.mjs run`, or a launchd agent via `install`). Owns the TLS WebSocket server, Bonjour, pairing and trusted devices; keeps a registry of every running Pi over a local Unix socket; lets the phone browse the shared folders (`hub.json` `roots`), open any saved session, and starts `pi --mode rpc --session …` for it on demand (exits again after `idleExitMinutes`, default 3).
+1. **Pi Remote Hub** (`hub/`) — one resident Node process per Mac (run by the Pi Hub menu bar app, `node hub/bin.mjs run`, or a launchd agent via `install`). Owns the TLS WebSocket server, Bonjour, pairing and trusted devices; keeps a registry of every running Pi over a local Unix socket; lets the phone browse the shared folders (`hub.json` `roots`), open any saved session, and starts `pi --mode rpc --session …` for it on demand (exits again after `idleExitMinutes`, default 3).
 2. **TypeScript Pi extension** (`extension/`) — loaded into every `pi` process. Registers its session with the hub (`HubLink`), runs forwarded commands against the live session, streams Pi events back, and provides `/remote pair|status|devices|revoke|rotate|takeover`. It never listens on the network.
 3. **iOS app** (`Pi/`) — native SwiftUI app built on **The Composable Architecture (TCA)**. Pairs once with the hub, then picks a session and drives it: send prompts, abort, compact, observe streaming assistant output and tool calls.
+4. **Pi Hub menu bar app** (`mac/PiHub`, SwiftPM, macOS 14+) — runs `node hub/bin.mjs run` as its child (restart with backoff 1/2/5/10/30 s; quitting stops it; an already-running hub is only observed) and shows the hub's `overview` (running Pi, phones, paired devices, roots) polled every 2 s over `hub.sock`. Built into `mac/build/Pi Hub.app` by `scripts/build-mac-app.mjs`.
 
 User flow:
 
@@ -43,6 +44,9 @@ pi-remote-ios/
 │   ├── SessionCatalog.ts, SessionIndex.ts  folders/sessions under the roots; incremental JSONL index
 │   ├── HubConfig.ts        hub.json (roots, idleExitMinutes, port, piCommand, piArgs)
 │   └── launchd.ts, controlClient.ts
+├── mac/PiHub/              Pi Hub menu bar app (SwiftPM; `swift test --package-path mac/PiHub`)
+│   ├── Sources/PiHubCore/  HubOverview (overview JSON), HubControlClient (hub.sock), HubLaunchConfig, HubFormatting
+│   └── Sources/PiHub/      PiHubApp (MenuBarExtra), HubModel, HubSupervisor (child hub), MenuView, PairingPanel, MenuSnapshot (DEBUG)
 ├── extension/              TypeScript Pi extension (runs in every Pi process)
 │   ├── index.ts            entry point: HubLink per session, event stream, remote_question
 │   ├── command.ts          /remote command (talks to the hub's control ops)
@@ -109,7 +113,9 @@ pi-remote-ios/
 
 | Module | Owns |
 |---|---|
-| `HubService` | The hub: composes `RemoteServer` + `RemoteControlRuntime` + `DeviceTrust` + `AgentHub` + `AgentSpawner` + `SessionCatalog`; control ops (`status`, `pair`, `devices`, `revoke`, `rotate`); idle exit of hub-started Pi; LAN listen retry. |
+| `HubService` | The hub: composes `RemoteServer` + `RemoteControlRuntime` + `DeviceTrust` + `AgentHub` + `AgentSpawner` + `SessionCatalog`; control ops (`status`, `pair` (+ `pairingLink`), `devices`, `revoke`, `rotate`, and for the menu bar app `overview`, `addRoot`, `removeRoot`, `setIdle`, `stopAgent` — hub-started Pi only; root and idle changes are saved to `hub.json`); idle exit of hub-started Pi; LAN listen retry. |
+| `HubSupervisor` (Swift) | The menu bar app's child hub: `node <checkout>/hub/bin.mjs run` with the PATH recorded at build time, log appended to `hub.log`, restart with backoff when it exits on its own, SIGTERM then SIGKILL on quit. Leaves a hub that answers on `hub.sock` alone (external). |
+| `HubModel` (Swift) | Polls `overview` every 2 s, keeps the supervisor reconciled, runs the menu's control requests, tracks the open pairing window, Open at Login (`SMAppService.mainApp`). |
 | `AgentHub` | Unix socket (`hub.sock`, 0600). Registers Pi processes (`hello`), routes phone requests (`request`/`reply` with per-request ids), fans events out to attached phones, replays an open question on attach, follows a Pi window across session switches (same pid re-registers), and enforces one writer per session (idle handoff at once, busy handoff after the run). |
 | `PhoneSession` | One phone connection: auth, `hub.listProjects/listSessions/listFolders/openSession/newSession/detach`, roots checks, answers stopped sessions from disk, wakes Pi on demand. |
 | `AgentSpawner` | Starts `pi [piArgs] --mode rpc [--session f]` with `PI_REMOTE_SPAWN_TOKEN`, cancels RPC dialog requests, stops via stdin EOF → SIGTERM → SIGKILL. |
@@ -167,6 +173,9 @@ npm test              # node --test test/*.test.mjs
 
 node hub/bin.mjs run  # hub in the foreground (JSON logs on stderr); PI_REMOTE_STATE_DIR isolates state
 node hub/bin.mjs roots add <dir> | pair | status | devices | revoke <id> | idle <min>
+
+node scripts/build-mac-app.mjs [--install]   # Pi Hub.app (menu bar); --install replaces ~/Applications/Pi Hub.app and opens it
+swift test --package-path mac/PiHub          # menu bar app core tests; PI_HUB_LIVE_SOCKET=…/hub.sock also decodes a live overview
 
 pi                    # from repo root, loads extension via .pi/settings.json; registers with the hub
 > /remote pair | status | devices | revoke <id> | rotate | takeover

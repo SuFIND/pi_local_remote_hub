@@ -89,7 +89,7 @@ resumes in the background (and stops again after three idle minutes).
 iPhone app
     │ wss:// on the LAN (pinned TLS, paired token)
     ▼
-Pi Remote Hub  (launchd agent, ~/.pi/agent/pi-remote/)
+Pi Remote Hub  (Pi Hub menu bar app or launchd agent, ~/.pi/agent/pi-remote/)
     │ Unix socket hub.sock (0600)            starts `pi --mode rpc --session …`
     ▼                                         ▼
 Pi windows in your terminals            hub-started Pi (no terminal)
@@ -165,8 +165,36 @@ loads the local extension automatically.
 
 ## Run the hub
 
-The hub needs the same checkout (or package install) as the extension. From the
-repository root:
+The hub needs the same checkout (or package install) as the extension.
+
+### Pi Hub menu bar app (macOS)
+
+```bash
+node scripts/build-mac-app.mjs --install   # builds and opens ~/Applications/Pi Hub.app
+```
+
+Pi Hub lives in the menu bar (no Dock icon). It starts the hub, restarts it if it
+exits, and shows:
+
+- running Pi sessions — name, folder, Terminal or Background, Working, model, the
+  iPhone viewing it, and Not shared when its folder is outside the shared folders;
+  hover a Background session to stop that Pi;
+- connected iPhones and what each one is viewing;
+- shared folders (add or remove), paired iPhones (revoke), and the idle time for
+  hub-started Pi;
+- **Pair iPhone…** — a QR code and the six-digit code with a countdown.
+
+Quitting Pi Hub stops the hub it started. Turn on **Open Pi Hub at Login** in its
+menu to keep it running after a restart (macOS may ask you to approve it under
+System Settings › General › Login Items). A hub that already runs (from a terminal
+or the launchd agent below) is only observed; **Restart Hub in Pi Hub** in the
+gear menu hands it over. The build records this checkout's `hub/bin.mjs`, the
+`node` that ran the script, and a PATH that reaches `pi` in the app's Info.plist,
+so rebuild after moving the checkout or switching Node versions.
+
+### Command line
+
+From the repository root:
 
 ```bash
 node hub/bin.mjs roots add ~/code      # share a folder: its sessions and subfolders
@@ -258,6 +286,13 @@ Install dependencies and run extension checks:
 ```bash
 npm ci
 npm run check
+```
+
+Run the Pi Hub (menu bar app) tests, and render its menu with sample data:
+
+```bash
+swift test --package-path mac/PiHub
+PI_HUB_SNAPSHOT=/tmp/menu.png "$(swift build --package-path mac/PiHub --show-bin-path)/PiHub"   # writes menu-{light,dark,pairing}.png
 ```
 
 Run the iOS tests:

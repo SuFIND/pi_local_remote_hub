@@ -42,6 +42,18 @@ const STORED_COMMANDS = new Set(["session.history", "session.getState", "session
  * (terminal window or hub-started) or a saved session that is "asleep".
  * Commands to a sleeping session start Pi for it on demand.
  */
+/** One signed-in phone, as listed by the hub's `overview`. */
+export type PhoneSummary = {
+	connectionId: string;
+	deviceId: string;
+	deviceName: string;
+	remoteAddress?: string;
+	connectedAt: string;
+	/** The running Pi it is attached to; absent while it looks at a stopped session or the browser. */
+	agentId?: string;
+	session?: { path?: string; cwd: string; name?: string };
+};
+
 export class PhoneSession implements ConnectionSession, Viewer {
 	readonly id: string;
 	private device?: TrustedDevice;
@@ -49,6 +61,7 @@ export class PhoneSession implements ConnectionSession, Viewer {
 	private agent?: AgentRecord;
 	/** True while this phone itself is starting Pi for its target. */
 	private waking = false;
+	private readonly connectedAt = new Date().toISOString();
 
 	constructor(
 		private readonly context: SessionContext,
@@ -65,6 +78,20 @@ export class PhoneSession implements ConnectionSession, Viewer {
 
 	authenticatedDeviceId(): string | undefined {
 		return this.device?.id;
+	}
+
+	/** What the Mac menu bar app shows for this phone; undefined until it signs in. */
+	describe(): PhoneSummary | undefined {
+		if (!this.device) return undefined;
+		return {
+			connectionId: this.id,
+			deviceId: this.device.id,
+			deviceName: this.device.name,
+			remoteAddress: this.context.remoteAddress,
+			connectedAt: this.connectedAt,
+			agentId: this.agent?.agentId,
+			session: this.target ? { path: this.target.path, cwd: this.target.cwd, name: this.agent?.session.name } : undefined,
+		};
 	}
 
 	/** Saved session this phone is looking at while no Pi runs it. */

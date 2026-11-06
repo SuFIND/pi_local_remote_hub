@@ -24,7 +24,12 @@ export type AgentSessionInfo = {
 	name?: string;
 };
 
-export type ControlOp = "status" | "pair" | "devices" | "revoke" | "rotate";
+/**
+ * Requests from local tools (the `/remote` command, the hub CLI, the Pi Hub
+ * menu bar app). `overview`, `addRoot`, `removeRoot`, `setIdle` and
+ * `stopAgent` serve the menu bar app.
+ */
+export type ControlOp = "status" | "pair" | "devices" | "revoke" | "rotate" | "overview" | "addRoot" | "removeRoot" | "setIdle" | "stopAgent";
 
 /** Client envelope the hub forwards unchanged (the phone's request id is kept hub-side). */
 export type ForwardedEnvelope = { type: string; protocolVersion: number; payload?: unknown };

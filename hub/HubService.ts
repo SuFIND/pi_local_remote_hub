@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { DeviceTrust } from "../extension/auth/DeviceTrust.js";
+import { DeviceTrust, type TrustedDevice } from "../extension/auth/DeviceTrust.js";
 import { FileTrustStore } from "../extension/auth/TrustStore.js";
 import type { HubStatusView } from "../extension/command.js";
 import { DEFAULT_REMOTE_CONFIG } from "../extension/config.js";
@@ -10,12 +10,13 @@ import { hubSocketPath, type ControlOp, type ForwardedEnvelope } from "../extens
 import { loadOrCreateHostIdentity } from "../extension/identity/HostIdentity.js";
 import type { Logger } from "../extension/logging/logger.js";
 import { BonjourAdvertiser } from "../extension/net/BonjourAdvertiser.js";
+import { buildPairingDeepLink } from "../extension/runtime/pairingLink.js";
 import { RemoteControlRuntime } from "../extension/runtime/RemoteControlRuntime.js";
 import { RemoteServer } from "../extension/server/RemoteServer.js";
 import { AgentHub, type AgentRecord, type Viewer } from "./AgentHub.js";
 import { AgentSpawner, type AgentSpawnerOptions } from "./AgentSpawner.js";
-import { canonicalPath, isInsideRoots, type HubConfig } from "./HubConfig.js";
-import { PhoneSession, type HubCore } from "./PhoneSession.js";
+import { canonicalPath, isInsideRoots, saveHubConfig, type HubConfig } from "./HubConfig.js";
+import { PhoneSession, type HubCore, type PhoneSummary } from "./PhoneSession.js";
 import { listFolders, readStoredHistory, readStoredState, SessionCatalog, type LiveSession } from "./SessionCatalog.js";
 
 export type HubServiceOptions = {
@@ -32,6 +33,43 @@ export type HubServiceOptions = {
 	idleCheckMs?: number;
 	listenRetryMs?: number;
 	followGraceMs?: number;
+	/** `hub.json`; lets local tools change roots and idle time through the hub. */
+	configPath?: string;
+	logPath?: string;
+};
+
+/** One running Pi, as listed by `overview`. */
+export type AgentSummary = {
+	agentId: string;
+	pid: number;
+	mode: AgentRecord["mode"];
+	/** `terminal`: a Pi window the user opened; `background`: started by the hub for a phone. */
+	origin: "terminal" | "background";
+	cwd: string;
+	sessionFile?: string;
+	sessionName?: string;
+	model?: string;
+	busy: boolean;
+	/** Whether the phone can see it (its folder is inside a shared root). */
+	shared: boolean;
+	connectedAt: string;
+	lastActivityAt: string;
+	/** Names of the phones attached to it. */
+	viewers: string[];
+};
+
+/** Everything the Pi Hub menu bar app shows, in one control request. */
+export type HubOverview = {
+	pid: number;
+	startedAt: string;
+	status: HubStatusView;
+	roots: string[];
+	idleExitMinutes: number;
+	agents: AgentSummary[];
+	phones: PhoneSummary[];
+	devices: TrustedDevice[];
+	configPath?: string;
+	logPath?: string;
 };
 
 /**
@@ -48,6 +86,7 @@ export class HubService implements HubCore {
 	private readonly catalog: SessionCatalog;
 	private readonly spawner: AgentSpawner;
 	private readonly phones = new Set<PhoneSession>();
+	private readonly startedAt = new Date().toISOString();
 	private readonly waking = new Map<string, Promise<AgentRecord>>();
 	private readonly spawnWaiters = new Map<string, (agent: AgentRecord) => void>();
 	private readonly host = hostname();
@@ -129,7 +168,9 @@ export class HubService implements HubCore {
 			case "pair": {
 				if (!this.server.isRunning()) throw new Error(`The hub is not listening on the LAN${this.lastError ? `: ${this.lastError}` : ""}`);
 				const pairing = this.deviceTrust.startPairing();
-				return { ...this.status(), pairingCode: pairing.code, pairingExpiresAt: pairing.expiresAt };
+				const status = this.status();
+				const pairingLink = status.webSocketUrl && pairing.code ? buildPairingDeepLink(status.webSocketUrl, pairing.code) : undefined;
+				return { ...status, pairingCode: pairing.code, pairingExpiresAt: pairing.expiresAt, pairingLink };
 			}
 			case "devices":
 				return { devices: this.deviceTrust.listTrustedDevices() };
@@ -141,7 +182,70 @@ export class HubService implements HubCore {
 			case "rotate":
 				this.runtime.rotateTrust();
 				return this.status();
+			case "overview":
+				return this.overview();
+			case "addRoot":
+			case "removeRoot": {
+				const path = canonicalPath(String(args?.path ?? ""));
+				if (op === "addRoot" && !(existsSync(path) && statSync(path).isDirectory())) throw new Error(`Not a folder: ${path}`);
+				const roots = op === "addRoot" ? [...new Set([...this.config.roots, path])] : this.config.roots.filter((root) => root !== path);
+				this.saveConfig({ ...this.config, roots });
+				return this.overview();
+			}
+			case "setIdle": {
+				const minutes = Number(args?.minutes);
+				if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60) throw new Error("Idle minutes must be between 0 and 1440");
+				this.saveConfig({ ...this.config, idleExitMinutes: minutes });
+				return this.overview();
+			}
+			case "stopAgent": {
+				const agent = this.agents.list().find((record) => record.agentId === args?.agentId);
+				if (!agent) throw new Error("That Pi is no longer running");
+				if (!agent.spawnToken) throw new Error("This Pi runs in a terminal window; quit it there");
+				await this.stopAgent(agent, "exited");
+				return this.overview();
+			}
 		}
+	}
+
+	overview(): HubOverview {
+		const phones = [...this.phones].map((phone) => phone.describe()).filter((phone): phone is PhoneSummary => Boolean(phone));
+		const agents = this.agents.list().map((agent): AgentSummary => {
+			const model = agent.state?.model as { name?: unknown; id?: unknown } | undefined;
+			return {
+				agentId: agent.agentId,
+				pid: agent.pid,
+				mode: agent.mode,
+				origin: agent.spawnToken ? "background" : "terminal",
+				cwd: agent.session.cwd,
+				sessionFile: agent.session.file,
+				sessionName: agent.session.name,
+				model: typeof model?.name === "string" ? model.name : typeof model?.id === "string" ? model.id : undefined,
+				busy: agent.busy,
+				shared: isInsideRoots(agent.session.cwd, this.config.roots),
+				connectedAt: new Date(agent.connectedAt).toISOString(),
+				lastActivityAt: new Date(agent.lastActivityAt).toISOString(),
+				viewers: phones.filter((phone) => phone.agentId === agent.agentId).map((phone) => phone.deviceName),
+			};
+		});
+		return {
+			pid: process.pid,
+			startedAt: this.startedAt,
+			status: this.status(),
+			roots: this.config.roots,
+			idleExitMinutes: this.config.idleExitMinutes,
+			agents,
+			phones,
+			devices: this.deviceTrust.listTrustedDevices(),
+			configPath: this.options.configPath,
+			logPath: this.options.logPath,
+		};
+	}
+
+	private saveConfig(config: HubConfig): void {
+		if (!this.options.configPath) throw new Error("This hub runs without a config file");
+		saveHubConfig(this.options.configPath, config);
+		this.updateConfig(config);
 	}
 
 	// MARK: HubCore

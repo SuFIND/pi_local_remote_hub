@@ -94,7 +94,7 @@ async function run(stateDir: string, configPath: string): Promise<number> {
 	const logger = createLogger("pi-remote-hub", "info");
 	const config = loadHubConfig(configPath);
 	if (!existsSync(configPath)) saveHubConfig(configPath, config);
-	const hub = new HubService({ stateDir, config, logger });
+	const hub = new HubService({ stateDir, config, logger, configPath, logPath });
 	await hub.start();
 	const status = hub.status();
 	logger.info("hub_started", { url: status.displayWebSocketUrl, roots: config.roots, pid: process.pid });

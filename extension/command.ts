@@ -28,6 +28,8 @@ export type HubStatusView = {
 	};
 	pairingCode?: string;
 	pairingExpiresAt?: string;
+	/** `pi-remote://pair?…` deep link for the open pairing window (QR content). */
+	pairingLink?: string;
 	lastError?: string;
 };
 

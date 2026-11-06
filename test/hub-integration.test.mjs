@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -240,9 +240,11 @@ async function withHub(body, { idleExitMinutes = 3, idleCheckMs = 60_000, follow
 	const outside = join(base, "outside");
 	for (const dir of [stateDir, sessionsDir, app, lib, outside]) mkdirSync(dir, { recursive: true });
 	const socketPath = hubSocketPath(stateDir);
+	const configPath = join(stateDir, "hub.json");
 	const spawner = fakeSpawner(socketPath, sessionsDir);
 	const hub = new HubService({
 		stateDir,
+		configPath,
 		config: { ...DEFAULT_HUB_CONFIG, roots: [root], idleExitMinutes, port: 0 },
 		logger,
 		catalog: new SessionCatalog({ sessionDir: sessionsDir, cacheMs: 0 }),
@@ -258,6 +260,7 @@ async function withHub(body, { idleExitMinutes = 3, idleCheckMs = 60_000, follow
 	const phones = [];
 	const ctx = {
 		hub,
+		configPath,
 		root,
 		app,
 		lib,
@@ -650,5 +653,67 @@ test("pi-remote control ops: status reports roots, agents and the pinned URL", a
 		assert.equal(status.agents, 1);
 		assert.equal(status.idleExitMinutes, 3);
 		assert.match(status.webSocketUrl, /^wss:\/\/127\.0\.0\.1:\d+\/v1\/ws#fp=/);
+	});
+});
+
+// MARK: menu bar app
+
+test("overview lists each Pi, the phones watching it, devices and roots", async () => {
+	await withHub(async ({ hub, root, app, outside, sessionsDir, agent, registered, pair }) => {
+		const file = writeSession(sessionsDir, app, "menu");
+		await registered(agent({ file, cwd: app, name: "Menu work" }));
+		await registered(agent({ cwd: outside }));
+		const { phone } = await pair();
+		await phone.request("hub.openSession", { sessionPath: file });
+
+		const overview = await hub.control("overview");
+		assert.equal(overview.pid, process.pid);
+		assert.deepEqual(overview.roots, [root]);
+		assert.equal(overview.status.running, true);
+		const shared = overview.agents.find((entry) => entry.cwd === app);
+		assert.equal(shared.origin, "terminal");
+		assert.equal(shared.sessionName, "Menu work");
+		assert.equal(shared.sessionFile, file);
+		assert.equal(shared.shared, true);
+		assert.deepEqual(shared.viewers, ["Test iPhone"]);
+		const hidden = overview.agents.find((entry) => entry.cwd === outside);
+		assert.equal(hidden.shared, false);
+		assert.deepEqual(hidden.viewers, []);
+		assert.equal(overview.phones.length, 1);
+		assert.equal(overview.phones[0].deviceName, "Test iPhone");
+		assert.equal(overview.phones[0].agentId, shared.agentId);
+		assert.equal(overview.phones[0].session.path, file);
+		assert.deepEqual(overview.devices.map((device) => device.name), ["Test iPhone"]);
+
+		const pairing = await hub.control("pair");
+		assert.match(pairing.pairingLink, /^pi-remote:\/\/pair\?/);
+		assert.ok(pairing.pairingLink.includes(`code=${pairing.pairingCode}`));
+	});
+});
+
+test("menu bar ops save roots and idle time, and stop only hub-started Pi", async () => {
+	await withHub(async ({ hub, configPath, root, app, lib, outside, sessionsDir, agent, registered, pair, spawner }) => {
+		const saved = () => JSON.parse(readFileSync(configPath, "utf8"));
+		assert.deepEqual((await hub.control("addRoot", { path: outside })).roots, [root, outside]);
+		assert.deepEqual(saved().roots, [root, outside]);
+		await assert.rejects(hub.control("addRoot", { path: join(outside, "missing") }), /Not a folder/);
+		assert.deepEqual((await hub.control("removeRoot", { path: outside })).roots, [root]);
+		assert.deepEqual(saved().roots, [root]);
+		assert.equal((await hub.control("setIdle", { minutes: 7 })).idleExitMinutes, 7);
+		assert.equal(saved().idleExitMinutes, 7);
+		await assert.rejects(hub.control("setIdle", { minutes: 0 }), /between/);
+
+		const terminal = await registered(agent({ file: writeSession(sessionsDir, app, "t"), cwd: app }));
+		await assert.rejects(hub.control("stopAgent", { agentId: terminal.agentId }), /terminal/);
+		await assert.rejects(hub.control("stopAgent", { agentId: "nope" }), /no longer running/);
+
+		const { phone } = await pair();
+		await phone.request("hub.newSession", { cwd: lib });
+		const background = (await hub.control("overview")).agents.find((entry) => entry.origin === "background");
+		assert.ok(background);
+		await hub.control("stopAgent", { agentId: background.agentId });
+		assert.deepEqual(spawner.stopped, ["tok1"]);
+		const status = await phone.next((message) => message.type === "hub.sessionStatus" && message.payload.reason === "exited");
+		assert.equal(status.payload.session.status, "stopped");
 	});
 });

@@ -10,6 +10,10 @@ The local-first remote-control system that lets a paired client control the Pi s
 
 The one resident process per Mac that owns the LAN listener, pairing and trusted devices, knows every running Pi process (they register over a local socket), and starts Pi for sessions the phone opens.
 
+### Pi Hub (menu bar app)
+
+The macOS menu bar app (`mac/PiHub`) that runs the hub as its child process, restarts it when it exits, and shows its running Pi sessions, connected and paired iPhones and shared folders. Quitting it stops the hub it started; a hub started elsewhere is only observed.
+
 ### Shared folders (roots)
 
 The folders listed in `hub.json`. The phone can browse, open and create sessions only inside them.
