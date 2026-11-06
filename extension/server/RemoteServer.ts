@@ -209,7 +209,7 @@ export class RemoteServer {
 				send: (target, type, payload, requestId) => target.send(createServerEnvelope(this.nextSeq(), type, payload, requestId)),
 				onClose: (target) => {
 					this.registry.remove(target.id);
-					this.logger.info("websocket_disconnected", { connectionId: target.id });
+					this.logger.info("websocket_disconnected", { connectionId: target.id, ...target.closeInfo });
 				},
 			});
 			this.registry.add(connection);

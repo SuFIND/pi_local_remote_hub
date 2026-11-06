@@ -44,6 +44,9 @@ export class RemoteConnection {
 	private authTimeout?: NodeJS.Timeout;
 	private heartbeat?: NodeJS.Timeout;
 	private lastSeenAt = Date.now();
+	private readonly openedAt = Date.now();
+	/** How the socket closed, for the disconnect log (`close` is the close code; "code" keys are redacted). */
+	closeInfo?: { close: number; reason: string; durationMs: number };
 
 	constructor(options: RemoteConnectionOptions) {
 		this.id = options.id;
@@ -63,7 +66,10 @@ export class RemoteConnection {
 			void this.handleMessage(data);
 		});
 		this.ws.on("pong", () => this.markSeen());
-		this.ws.on("close", () => this.cleanup());
+		this.ws.on("close", (code, reason) => {
+			this.closeInfo = { close: code, reason: reason.toString("utf8").slice(0, 120), durationMs: Date.now() - this.openedAt };
+			this.cleanup();
+		});
 		this.ws.on("error", (error) => {
 			this.logger.warn("websocket_error", { connectionId: this.id, error: error.message });
 		});

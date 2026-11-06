@@ -3,17 +3,12 @@ import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
 import { RemoteSessionMonitor } from "../session/RemoteSessionMonitor.js";
-import { sanitizeForRemote } from "./sanitizer.js";
+import { selectHistory, type RemoteSessionHistory } from "./history.js";
 import { createStateSnapshot, type RemoteStateSnapshot } from "./stateSnapshot.js";
 
 export type PromptDelivery = "auto" | "prompt" | "steer" | "followUp";
 
-export type RemoteSessionHistory = {
-	entries: unknown[];
-	leafId?: string;
-	totalEntries: number;
-	truncated: boolean;
-};
+export type { RemoteSessionHistory } from "./history.js";
 
 export type RemoteModelOption = {
 	provider: string;
@@ -107,23 +102,7 @@ export class PiRemoteAdapter {
 		const ctx = this.latestContext;
 		if (!ctx) return { entries: [], totalEntries: 0, truncated: false };
 
-		const branch = ctx.sessionManager.getBranch().slice();
-		branch.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-		const total = branch.length;
-
-		let selected = branch;
-		let truncated = false;
-		if (limit !== undefined && limit < total) {
-			selected = branch.slice(total - limit);
-			truncated = true;
-		}
-
-		return {
-			entries: selected.map((entry) => sanitizeForRemote(entry)),
-			leafId: ctx.sessionManager.getLeafId() ?? undefined,
-			totalEntries: total,
-			truncated,
-		};
+		return selectHistory(ctx.sessionManager.getBranch(), ctx.sessionManager.getLeafId() ?? undefined, limit);
 	}
 
 	async prompt(message: string, delivery: PromptDelivery): Promise<void> {

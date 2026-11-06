@@ -1,8 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { parseSessionEntries, SessionManager, type FileEntry } from "@earendil-works/pi-coding-agent";
-import { sanitizeForRemote } from "../extension/pi/sanitizer.js";
-import type { RemoteSessionHistory } from "../extension/pi/PiRemoteAdapter.js";
+import { selectHistory, type RemoteSessionHistory } from "../extension/pi/history.js";
 import { canonicalPath, expandHome, isInsideRoots } from "./HubConfig.js";
 import { SessionIndex, type IndexedSession } from "./SessionIndex.js";
 
@@ -194,16 +193,7 @@ export function listFolders(path: string): string[] {
 /** History of a session that is not running, read straight from its file. */
 export function readStoredHistory(path: string, limit?: number): RemoteSessionHistory {
 	const manager = openReadOnly(path);
-	const branch = manager.getBranch().slice();
-	branch.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-	const total = branch.length;
-	const selected = limit !== undefined && limit < total ? branch.slice(total - limit) : branch;
-	return {
-		entries: selected.map((entry) => sanitizeForRemote(entry)),
-		leafId: manager.getLeafId() ?? undefined,
-		totalEntries: total,
-		truncated: selected.length < total,
-	};
+	return selectHistory(manager.getBranch(), manager.getLeafId() ?? undefined, limit);
 }
 
 /** Best-effort state for a stopped session: idle, with its last model and thinking level. */

@@ -303,7 +303,7 @@ Returns the current session's branch from root → leaf so a connecting client c
 }
 ```
 
-`limit` is optional; when present it is clamped to `[1, 1000]` and the most recent N entries are returned. Omit it to receive the full branch.
+`limit` is optional; when present it is clamped to `[1, 1000]` and the most recent N entries are returned. Omit it to receive the full branch. Either way the answer is capped at 4 MiB of entry JSON: older entries are dropped first (the newest entry is always sent), and `truncated` is `true` whenever fewer than `totalEntries` entries came back. Clients must accept WebSocket messages of at least 16 MiB; the iOS app sets `maximumMessageSize` to that (the `URLSessionWebSocketTask` default of 1 MiB made long sessions fail to load and reconnect in a loop).
 
 Response:
 

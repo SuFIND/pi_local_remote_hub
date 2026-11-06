@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { extractEditPayload, synthesizeWriteDiff, type EditPayload } from "../pi/editPayload.js";
+import { extractEditPayload, MAX_DIFF_CHARS, synthesizeWriteDiff, type EditPayload } from "../pi/editPayload.js";
 import { mapPiEvent } from "../pi/eventMapper.js";
 import type { PiRemoteAdapter } from "../pi/PiRemoteAdapter.js";
 import type { RemoteSessionMonitor } from "../session/RemoteSessionMonitor.js";
@@ -112,7 +112,7 @@ export class RemoteEventStream {
 
 	private stashEditIfApplicable(event: unknown): EditPayload | undefined {
 		const payload = extractEditPayload(event) ?? synthesizeWriteDiff(event);
-		if (!payload) return undefined;
+		if (!payload || payload.diff.length > MAX_DIFF_CHARS) return undefined;
 		const id = readToolCallId(event);
 		if (!id) return undefined;
 		this.pendingEdits.set(id, payload);

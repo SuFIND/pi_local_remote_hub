@@ -8,9 +8,13 @@
  * view layer sees a consistent payload.
  *
  * The `diff` field is intentionally exempt from the 20K-char sanitizer cap:
- * users explicitly want to review whole diffs on mobile no matter the size,
- * and the WebSocket frame cap (256 KB) is the only ceiling we keep.
+ * users explicitly want to review whole diffs on mobile. It is still bounded
+ * by `MAX_DIFF_CHARS` so a huge `write` cannot exceed the hub's 16 MiB local
+ * frame or the phone's 16 MiB WebSocket message; past that the tool is shown
+ * without a diff.
  */
+
+export const MAX_DIFF_CHARS = 4 * 1024 * 1024;
 
 export type EditPayload = {
 	filePath: string;
