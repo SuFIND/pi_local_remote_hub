@@ -386,6 +386,13 @@ test("the phone only browses folders and sessions inside the shared roots", asyn
 			assert.equal(response.payload.code, "OUTSIDE_ROOTS", type);
 		}
 		assert.equal((await phone.request("hub.openSession", { sessionPath: foreign })).payload.code, "SESSION_UNAVAILABLE");
+
+		const recent = (await phone.request("hub.recentSessions", { limit: 5 })).payload.result.sessions;
+		assert.deepEqual(recent.map((session) => [session.path, session.cwd]), [[file, app]]);
+		const found = (await phone.request("hub.searchSessions", { query: "HELLO" })).payload.result;
+		assert.equal(found.query, "HELLO");
+		assert.deepEqual(found.sessions.map((session) => [session.path, session.match.field]), [[file, "firstMessage"]]);
+		assert.deepEqual((await phone.request("hub.searchSessions", { query: "secret" })).payload.result.sessions, []);
 		assert.equal((await phone.request("session.prompt", { message: "hi" })).payload.code, "NO_SESSION");
 	});
 });

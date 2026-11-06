@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { parseSessionEntries, SessionManager, type FileEntry } from "@earendil-works/pi-coding-agent";
 import { selectHistory, type RemoteSessionHistory } from "../extension/pi/history.js";
 import { canonicalPath, expandHome, isInsideRoots } from "./HubConfig.js";
@@ -27,6 +27,8 @@ export type ProjectSummary = {
 
 export type SessionSummary = {
 	path: string;
+	/** The folder Pi runs the session in. */
+	cwd: string;
 	id?: string;
 	name?: string;
 	firstMessage: string;
@@ -35,6 +37,11 @@ export type SessionSummary = {
 	status: SessionStatus;
 	busy: boolean;
 };
+
+/** Where a search hit its first term, with the text around it. */
+export type SessionMatch = { field: "name" | "firstMessage" | "prompt" | "folder"; snippet?: string };
+
+export type SessionSearchHit = SessionSummary & { match?: SessionMatch };
 
 export type CatalogOptions = {
 	/**
@@ -54,6 +61,10 @@ function envSessionDir(): string | undefined {
 
 const IGNORED_FOLDERS = new Set(["node_modules", "Library", "Applications"]);
 const FIRST_MESSAGE_CHARS = 240;
+const SNIPPET_CHARS = 120;
+const MAX_QUERY_TERMS = 8;
+/** Field weights: a hit in the name says more than one somewhere in the prompts. */
+const FIELD_WEIGHT = { name: 8, firstMessage: 4, folder: 2, prompt: 1 } as const;
 
 /**
  * Everything the phone can browse: Pi's saved sessions (an incremental
@@ -131,42 +142,132 @@ export class SessionCatalog {
 
 	async sessions(cwd: string, live: readonly LiveSession[]): Promise<SessionSummary[]> {
 		const folder = canonicalPath(cwd);
+		const entries = await this.entries(live, (path) => path === folder);
+		return entries.map((entry) => entry.summary).sort(byStatusThenRecent);
+	}
+
+	/**
+	 * Every running session inside the roots, then the `limit` most recently
+	 * active stopped ones.
+	 */
+	async recent(roots: readonly string[], live: readonly LiveSession[], limit: number): Promise<SessionSummary[]> {
+		const summaries = (await this.entries(live, (path) => isInsideRoots(path, roots))).map((entry) => entry.summary).sort(byStatusThenRecent);
+		const running = summaries.filter((summary) => summary.status !== "stopped");
+		const stopped = summaries.filter((summary) => summary.status === "stopped").slice(0, limit);
+		return [...running, ...stopped];
+	}
+
+	/**
+	 * Sessions inside the roots whose name, first message, prompts or folder
+	 * (relative to its root) contain every whitespace-separated term of
+	 * `query`, case-insensitively. Best field first, then running, then recent.
+	 */
+	async search(roots: readonly string[], live: readonly LiveSession[], query: string, limit: number): Promise<SessionSearchHit[]> {
+		const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, MAX_QUERY_TERMS);
+		if (terms.length === 0) return [];
+		const hits: { hit: SessionSearchHit; score: number }[] = [];
+		for (const { summary, prompts } of await this.entries(live, (path) => isInsideRoots(path, roots))) {
+			const root = roots.find((candidate) => isInsideRoots(summary.cwd, [candidate]));
+			const fields = {
+				name: summary.name ?? "",
+				firstMessage: summary.firstMessage,
+				folder: root ? `${basename(root)}/${relative(root, canonicalPath(summary.cwd))}` : summary.cwd,
+				prompt: prompts,
+			};
+			const lower = { name: fields.name.toLowerCase(), firstMessage: fields.firstMessage.toLowerCase(), folder: fields.folder.toLowerCase(), prompt: fields.prompt.toLowerCase() };
+			let score = 0;
+			let first: SessionMatch["field"] | undefined;
+			let quoted: { field: "firstMessage" | "prompt"; term: string } | undefined;
+			for (const term of terms) {
+				const field = (Object.keys(FIELD_WEIGHT) as SessionMatch["field"][]).find((key) => lower[key].includes(term));
+				if (!field) {
+					score = 0;
+					break;
+				}
+				score += FIELD_WEIGHT[field];
+				first ??= field;
+				if (!quoted && (field === "firstMessage" || field === "prompt")) quoted = { field, term };
+			}
+			if (score === 0 || !first) continue;
+			const match: SessionMatch = { field: first };
+			// The row shows the title and folder already; quote the message
+			// text that a term was found in, so the hit explains itself.
+			if (quoted) match.snippet = snippet(fields[quoted.field], lower[quoted.field], quoted.term);
+			hits.push({ hit: { ...summary, match }, score });
+		}
+		return hits
+			.sort((a, b) => b.score - a.score || byStatusThenRecent(a.hit, b.hit))
+			.slice(0, limit)
+			.map((entry) => entry.hit);
+	}
+
+	/** Saved and brand-new running sessions whose canonical cwd passes `include`. */
+	private async entries(live: readonly LiveSession[], include: (cwd: string) => boolean): Promise<{ summary: SessionSummary; prompts: string }[]> {
 		const liveByFile = new Map(live.filter((agent) => agent.file).map((agent) => [canonicalPath(agent.file!), agent]));
-		const summaries: SessionSummary[] = [];
+		const entries: { summary: SessionSummary; prompts: string }[] = [];
 		const seen = new Set<string>();
 		for (const session of await this.allSessions()) {
-			if (!session.cwd || canonicalPath(session.cwd) !== folder) continue;
+			if (!session.cwd || !include(canonicalPath(session.cwd))) continue;
 			const path = canonicalPath(session.path);
 			const agent = liveByFile.get(path);
 			seen.add(path);
-			summaries.push({
-				path: session.path,
-				id: session.id,
-				name: session.name ?? agent?.name,
-				firstMessage: truncate(session.firstMessage, FIRST_MESSAGE_CHARS),
-				modified: session.modified.toISOString(),
-				messageCount: session.messageCount,
-				status: agent?.status ?? "stopped",
-				busy: agent?.busy ?? false,
+			entries.push({
+				summary: {
+					path: session.path,
+					cwd: session.cwd,
+					id: session.id,
+					name: session.name ?? agent?.name,
+					firstMessage: truncate(session.firstMessage, FIRST_MESSAGE_CHARS),
+					modified: session.modified.toISOString(),
+					messageCount: session.messageCount,
+					status: agent?.status ?? "stopped",
+					busy: agent?.busy ?? false,
+				},
+				prompts: session.prompts ?? "",
 			});
 		}
 		// A brand-new session has no file on disk until its first message.
 		for (const agent of live) {
-			if (!agent.file || canonicalPath(agent.cwd) !== folder || seen.has(canonicalPath(agent.file))) continue;
-			summaries.push({
-				path: agent.file,
-				name: agent.name,
-				firstMessage: "",
-				modified: new Date().toISOString(),
-				messageCount: 0,
-				status: agent.status,
-				busy: agent.busy,
+			if (!agent.file || !include(canonicalPath(agent.cwd)) || seen.has(canonicalPath(agent.file))) continue;
+			entries.push({
+				summary: {
+					path: agent.file,
+					cwd: agent.cwd,
+					name: agent.name,
+					firstMessage: "",
+					modified: new Date().toISOString(),
+					messageCount: 0,
+					status: agent.status,
+					busy: agent.busy,
+				},
+				prompts: "",
 			});
 		}
-		return summaries.sort(
-			(a, b) => rank(b.status) - rank(a.status) || (b.modified ?? "").localeCompare(a.modified ?? ""),
-		);
+		return entries;
 	}
+}
+
+function byStatusThenRecent(a: SessionSummary, b: SessionSummary): number {
+	return rank(b.status) - rank(a.status) || (b.modified ?? "").localeCompare(a.modified ?? "");
+}
+
+/** About `SNIPPET_CHARS` of `text` around the first `term`, on word-ish edges. */
+function snippet(text: string, lower: string, term: string): string {
+	const at = Math.max(0, lower.indexOf(term));
+	const lead = Math.floor((SNIPPET_CHARS - term.length) / 3);
+	let start = Math.max(0, at - lead);
+	let end = Math.min(text.length, start + SNIPPET_CHARS);
+	start = Math.max(0, end - SNIPPET_CHARS);
+	if (start > 0) {
+		const space = text.lastIndexOf(" ", at);
+		if (space > start && space - start < 20) start = space + 1;
+	}
+	if (end < text.length) {
+		const space = text.indexOf(" ", end - 20);
+		if (space !== -1 && space < end) end = space;
+	}
+	const body = text.slice(start, end).replace(/\s+/g, " ").trim();
+	return `${start > 0 ? "…" : ""}${body}${end < text.length ? "…" : ""}`;
 }
 
 /** Visible child directories, sorted by name. Never lists files. */

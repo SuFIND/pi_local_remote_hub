@@ -7,6 +7,9 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 - Pairs with a running Pi session by scanning its QR code in the app or entering its host URL and six-digit code.
 - Stores the issued device token in Keychain for later authenticated reconnects.
 - Restores session state, transcript history, and pending questions after reconnecting.
+- Opens on running and recent sessions across the shared folders, then the shared folders themselves.
+- Shows a shared folder as its own sessions plus a collapsible tree of the projects inside it; levels without sessions fold into one row, and folders with no sessions at all stay under "Other Folders".
+- Searches sessions by name, prompts and folder, with the matching text quoted.
 - Sends prompts to the active session.
 - Queues a prompt for later delivery or steers the current run while Pi is busy.
 - Aborts the current run and requests session compaction.
@@ -29,7 +32,7 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 - Runs as one resident process per Mac (foreground, or a launchd login item).
 - Runs the authenticated TLS WebSocket server, binds the LAN address, and advertises it over Bonjour.
 - Generates an expiring pairing code and QR link on request (`pair`).
-- Lists the folders and Pi sessions inside the configured shared folders, live or saved.
+- Lists the folders and Pi sessions inside the configured shared folders, live or saved, plus running-and-recent and search across all of them.
 - Opens any of those sessions, answers history from disk while stopped, and starts Pi for it on demand.
 - Starts new sessions in a shared folder; hub-started Pi exits after three idle minutes.
 - Follows a Pi window across session switches and hands sessions over to a terminal that opens them.

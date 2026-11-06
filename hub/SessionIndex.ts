@@ -14,6 +14,8 @@ export type IndexedSession = {
 	modified: Date;
 	messageCount: number;
 	firstMessage: string;
+	/** The user's prompts, whitespace-collapsed, newest last; for search. */
+	prompts: string;
 };
 
 type FileState = {
@@ -27,6 +29,7 @@ type FileState = {
 	name?: string;
 	messageCount: number;
 	firstMessage: string;
+	prompts: string;
 	lastActivity?: number;
 };
 
@@ -41,6 +44,12 @@ const TAIL_BYTES = 640;
 /** `"timestamp":<ms>` as a message field, not inside an escaped string. */
 const MESSAGE_TIME = /(?<!\\)"timestamp":(\d+)/g;
 const HEADER_PROBE_BYTES = 4_096;
+/** Searchable prompt text kept per session (the newest wins). */
+export const PROMPT_TEXT_MAX = 32 * 1024;
+/** One prompt's share of it; a pasted log does not push out the rest. */
+const PROMPT_CHARS = 4 * 1024;
+/** User lines larger than this (attached images) are not parsed for text. */
+const PROMPT_LINE_MAX = 512 * 1024;
 
 /**
  * Pi's own `SessionManager.listAll()` parses every session file in full on
@@ -124,7 +133,7 @@ export class SessionIndex {
 }
 
 function emptyState(): FileState {
-	return { size: 0, mtimeMs: 0, offset: 0, invalid: false, messageCount: 0, firstMessage: "" };
+	return { size: 0, mtimeMs: 0, offset: 0, invalid: false, messageCount: 0, firstMessage: "", prompts: "" };
 }
 
 function toInfo(path: string, state: FileState, mtime: Date): IndexedSession | undefined {
@@ -142,6 +151,7 @@ function toInfo(path: string, state: FileState, mtime: Date): IndexedSession | u
 		modified,
 		messageCount: state.messageCount,
 		firstMessage: state.firstMessage || "(no messages)",
+		prompts: state.prompts,
 	};
 }
 
@@ -198,7 +208,7 @@ function consumeLine(state: FileState, buffer: Buffer, start: number, end: numbe
 	}
 	if (type !== "message") return;
 	const role = /"message":\{"role":"([A-Za-z]+)"/.exec(head)?.[1];
-	if (role === undefined || (role === "user" && !state.firstMessage)) {
+	if (role === undefined || (role === "user" && (!state.firstMessage || end - start <= PROMPT_LINE_MAX))) {
 		const entry = parse(buffer.toString("utf8", start, end));
 		if (entry) applyEntry(state, entry);
 		return;
@@ -233,9 +243,18 @@ function applyEntry(state: FileState, entry: Record<string, unknown>): void {
 	if (message.role !== "user" && message.role !== "assistant") return;
 	const time = typeof message.timestamp === "number" ? message.timestamp : new Date(String(entry.timestamp)).getTime();
 	if (!Number.isNaN(time)) state.lastActivity = Math.max(state.lastActivity ?? 0, time);
-	if (state.firstMessage || message.role !== "user") return;
+	if (message.role !== "user") return;
 	const text = extractText(message.content);
-	if (text) state.firstMessage = text;
+	if (!text) return;
+	if (!state.firstMessage) state.firstMessage = text;
+	addPrompt(state, text);
+}
+
+function addPrompt(state: FileState, text: string): void {
+	const prompt = text.replace(/\s+/g, " ").trim().slice(0, PROMPT_CHARS);
+	if (!prompt) return;
+	const joined = state.prompts ? `${state.prompts}\n${prompt}` : prompt;
+	state.prompts = joined.length > PROMPT_TEXT_MAX ? joined.slice(joined.length - PROMPT_TEXT_MAX) : joined;
 }
 
 function extractText(content: unknown): string {

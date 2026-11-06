@@ -9,7 +9,7 @@ import { ProtocolError } from "../extension/protocol/errors.js";
 import type { ClientMessage } from "../extension/protocol/ProtocolDecoder.js";
 import type { SessionContext } from "../extension/server/RemoteServer.js";
 import type { AgentRecord, Viewer } from "./AgentHub.js";
-import type { ProjectSummary, SessionStatus, SessionSummary } from "./SessionCatalog.js";
+import type { ProjectSummary, SessionSearchHit, SessionStatus, SessionSummary } from "./SessionCatalog.js";
 
 /** What a phone connection needs from the hub (implemented by `HubService`). */
 export type HubCore = {
@@ -17,6 +17,9 @@ export type HubCore = {
 	isAllowedFolder(path: string): boolean;
 	listProjects(): Promise<ProjectSummary[]>;
 	listSessions(cwd: string): Promise<SessionSummary[]>;
+	/** Running sessions inside the roots, then the `limit` most recent stopped ones. */
+	recentSessions(limit: number): Promise<SessionSummary[]>;
+	searchSessions(query: string, limit: number): Promise<SessionSearchHit[]>;
 	listFolders(path: string): string[];
 	/** A saved or running session inside the roots, or undefined. */
 	resolveSession(path: string): Promise<{ path: string; cwd: string } | undefined>;
@@ -115,6 +118,12 @@ export class PhoneSession implements ConnectionSession, Viewer {
 			case "hub.listSessions":
 				this.requireFolder(message.cwd);
 				this.ok(message, { cwd: message.cwd, sessions: await this.core.listSessions(message.cwd) });
+				return;
+			case "hub.recentSessions":
+				this.ok(message, { sessions: await this.core.recentSessions(message.limit) });
+				return;
+			case "hub.searchSessions":
+				this.ok(message, { query: message.query, sessions: await this.core.searchSessions(message.query, message.limit) });
 				return;
 			case "hub.listFolders":
 				this.requireFolder(message.path);

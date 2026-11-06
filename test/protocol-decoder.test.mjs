@@ -135,6 +135,21 @@ test("ProtocolDecoder clamps session.history limit", () => {
 	assert.equal(message.limit, 1000);
 });
 
+test("ProtocolDecoder decodes hub.recentSessions and hub.searchSessions with clamped limits", () => {
+	assert.deepEqual(decodeClientMessage(frame({ id: "r1", type: "hub.recentSessions", protocolVersion: 1 })), { kind: "hub.recentSessions", id: "r1", limit: 10 });
+	assert.equal(decodeClientMessage(frame({ type: "hub.recentSessions", protocolVersion: 1, payload: { limit: 500 } })).limit, 50);
+	assert.deepEqual(decodeClientMessage(frame({ id: "s1", type: "hub.searchSessions", protocolVersion: 1, payload: { query: "  login bug " } })), {
+		kind: "hub.searchSessions",
+		id: "s1",
+		query: "login bug",
+		limit: 50,
+	});
+	assert.equal(decodeClientMessage(frame({ type: "hub.searchSessions", protocolVersion: 1, payload: { query: "x", limit: 0 } })).limit, 1);
+	for (const payload of [{}, { query: "   " }, { query: "x".repeat(201) }]) {
+		assert.throws(() => decodeClientMessage(frame({ type: "hub.searchSessions", protocolVersion: 1, payload })), ProtocolError);
+	}
+});
+
 test("ProtocolDecoder decodes session.listModels", () => {
 	const message = decodeClientMessage(frame({
 		id: "models_1",

@@ -65,6 +65,33 @@ test("the index matches Pi's own session list", async () => {
 	}
 });
 
+test("every user prompt is kept for search, newest last and capped", async () => {
+	const { sessions, cwd, cleanup } = setup();
+	try {
+		const { PROMPT_TEXT_MAX } = jiti("../hub/SessionIndex.ts");
+		const manager = SessionManager.create(cwd, sessions);
+		manager.appendMessage(user("first   question", 1_000));
+		manager.appendMessage(assistant("assistant text is not indexed", 2_000));
+		manager.appendMessage(toolResult(3_000));
+		manager.appendMessage({ role: "user", content: "second\nquestion", timestamp: 4_000 });
+		const index = new SessionIndex({ sessionDir: sessions });
+		await assertMatchesPi(index, sessions);
+		let [info] = await index.list();
+		assert.equal(info.prompts, "first question\nsecond question");
+
+		// Appended prompts are picked up incrementally; old text drops off the front.
+		for (let i = 0; i < 12; i++) manager.appendMessage(user(`${i} ${"y".repeat(4_000)}`, 5_000 + i));
+		[info] = await index.list();
+		assert.equal(info.prompts.length, PROMPT_TEXT_MAX);
+		assert.ok(info.prompts.startsWith("y") || info.prompts.startsWith("\n"));
+		assert.ok(info.prompts.includes("11 yyy"));
+		assert.ok(!info.prompts.includes("first question"));
+		await assertMatchesPi(index, sessions);
+	} finally {
+		cleanup();
+	}
+});
+
 test("appends are read incrementally and a half-written line waits", async () => {
 	const { sessions, cwd, cleanup } = setup();
 	try {

@@ -30,7 +30,9 @@ iOS app currently requires an Xcode build from source.
 
 The phone pairs once with the hub, browses the folders you share, and opens any
 Pi session in them: one running in a terminal, or a saved one that the hub
-resumes in the background (and stops again after three idle minutes).
+resumes in the background (and stops again after three idle minutes). It opens
+on the running and recent sessions, searches sessions by name, prompts and
+folder, and shows each shared folder as a tree of the projects Pi ran in.
 
 ## iOS app
 

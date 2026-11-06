@@ -271,6 +271,14 @@ export class HubService implements HubCore {
 		return this.catalog.sessions(cwd, this.liveSessions());
 	}
 
+	recentSessions(limit: number) {
+		return this.catalog.recent(this.config.roots, this.liveSessions(), limit);
+	}
+
+	searchSessions(query: string, limit: number) {
+		return this.catalog.search(this.config.roots, this.liveSessions(), query, limit);
+	}
+
 	listFolders(path: string): string[] {
 		return listFolders(path);
 	}

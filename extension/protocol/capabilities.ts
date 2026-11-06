@@ -4,6 +4,8 @@ export const SERVER_CAPABILITIES = {
 		"hub.listProjects",
 		"hub.listSessions",
 		"hub.listFolders",
+		"hub.recentSessions",
+		"hub.searchSessions",
 		"hub.openSession",
 		"hub.newSession",
 		"hub.detach",

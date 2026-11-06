@@ -21,6 +21,8 @@ export type ClientMessage =
 	| { kind: "hub.listProjects"; id?: string }
 	| { kind: "hub.listSessions"; id?: string; cwd: string }
 	| { kind: "hub.listFolders"; id?: string; path: string }
+	| { kind: "hub.recentSessions"; id?: string; limit: number }
+	| { kind: "hub.searchSessions"; id?: string; query: string; limit: number }
 	| { kind: "hub.openSession"; id?: string; sessionPath: string }
 	| { kind: "hub.newSession"; id?: string; cwd: string }
 	| { kind: "hub.detach"; id?: string }
@@ -113,12 +115,28 @@ export function decodeClientMessage(data: WebSocket.RawData): ClientMessage {
 		const body = requireRecord(payload, "Payload is required");
 		return { kind: "hub.listFolders", id, path: requireAbsolutePath(body.path, "path must be an absolute path") };
 	}
+	if (type === "hub.recentSessions") {
+		const body = isRecord(payload) ? payload : {};
+		return { kind: "hub.recentSessions", id, limit: clampLimit(body.limit, 10, 50) };
+	}
+	if (type === "hub.searchSessions") {
+		const body = requireRecord(payload, "Payload is required");
+		const query = requireBoundedString(body.query, "query is required", 200).trim();
+		if (!query) throw new ProtocolError("BAD_REQUEST", "query is required");
+		return { kind: "hub.searchSessions", id, query, limit: clampLimit(body.limit, 50, 100) };
+	}
 	if (type === "hub.openSession") {
 		const body = requireRecord(payload, "Payload is required");
 		return { kind: "hub.openSession", id, sessionPath: requireAbsolutePath(body.sessionPath, "sessionPath must be an absolute path") };
 	}
 
 	return { kind: "unknown", id, type };
+}
+
+/** A whole number in `[1, max]`, else `fallback`. */
+function clampLimit(value: unknown, fallback: number, max: number): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+	return Math.max(1, Math.min(max, Math.floor(value)));
 }
 
 function requireAbsolutePath(value: unknown, message: string): string {

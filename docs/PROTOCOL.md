@@ -157,11 +157,19 @@ The phone only sees folders inside the hub's configured `roots`; anything else f
 
 ### `hub.listProjects`
 
-`{}` → `{ "roots": [...], "projects": [{ "path", "name", "root", "sessionCount", "running", "lastActivity"? }] }`. Each root, its direct subfolders, and every deeper folder that has sessions, sorted by running sessions, then recent activity.
+`{}` → `{ "roots": [...], "projects": [{ "path", "name", "root", "sessionCount", "running", "lastActivity"? }] }`. Each root, its direct subfolders, and every deeper folder that has sessions, sorted by running sessions, then recent activity. `sessionCount` and `running` count the folder's own sessions only (sessions are grouped by the folder Pi was started in); clients nest the list into a tree by path.
 
 ### `hub.listSessions`
 
-`{ "cwd": "/Users/me/code/app" }` → `{ "cwd", "sessions": [{ "path", "id"?, "name"?, "firstMessage", "modified"?, "messageCount", "status", "busy" }] }`. Live sessions first, then newest. A brand-new live session with nothing on disk yet is included with `messageCount: 0`.
+`{ "cwd": "/Users/me/code/app" }` → `{ "cwd", "sessions": [{ "path", "cwd", "id"?, "name"?, "firstMessage", "modified"?, "messageCount", "status", "busy" }] }`. Live sessions first, then newest. A brand-new live session with nothing on disk yet is included with `messageCount: 0`.
+
+### `hub.recentSessions`
+
+`{ "limit"?: 10 }` → `{ "sessions": [summary…] }`. Every running session inside the roots (live first), then the `limit` (1–50) most recently active stopped ones. Summaries are those of `hub.listSessions`; `cwd` tells the client which folder each belongs to.
+
+### `hub.searchSessions`
+
+`{ "query": "login bug", "limit"?: 50 }` → `{ "query", "sessions": [summary… with "match": { "field", "snippet"? }] }`. Case-insensitive; every whitespace-separated term (up to 8) must occur in the session's name, first message, user prompts (the newest 32 KiB per session) or folder (`<root name>/<path below the root>`). Hits are ranked by where the terms were found (name, first message, folder, prompts), then live first, then newest; `limit` is 1–100. `match.field` is where the first term was found; `snippet` quotes about 120 characters around the first term found in a message. Assistant replies and tool output are not searched. An empty `query` is `BAD_REQUEST`.
 
 ### `hub.listFolders`
 
