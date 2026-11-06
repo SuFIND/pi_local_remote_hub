@@ -100,7 +100,9 @@ The hub validates every incoming envelope, authenticates each connection, and
 routes a phone's commands to the Pi process that owns the session it opened.
 Each session has one writer: when you open a session in a terminal that the hub
 is running for the phone, the terminal takes over (immediately if idle, after
-the current run otherwise, reloading the newest messages by itself). The
+the current run otherwise, reloading the newest messages by itself). Until
+then the terminal shows the phone's run live above its editor, and two
+terminals on the same session do the same for each other. The
 protocol is versioned and documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 When a user sends a prompt, the iOS app submits an iOS 26 continued-processing

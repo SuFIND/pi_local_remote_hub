@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { HubLink } from "./agent/HubLink.js";
+import { LiveRunWidget } from "./agent/LiveRunWidget.js";
 import { SessionCommands } from "./agent/SessionCommands.js";
 import { registerRemoteCommand } from "./command.js";
 import { RemoteEventStream, type RemoteEventSink } from "./events/RemoteEventStream.js";
@@ -31,6 +32,7 @@ export default function piRemoteControl(pi: ExtensionAPI): void {
 	const evidence = new RunEvidenceCollector();
 	const adapter = new PiRemoteAdapter(pi, monitor);
 	let link: HubLink | undefined;
+	let liveRun: LiveRunWidget | undefined;
 
 	const sink: RemoteEventSink = {
 		isRunning: () => link?.isConnected() ?? false,
@@ -66,6 +68,7 @@ export default function piRemoteControl(pi: ExtensionAPI): void {
 		adapter.captureContext(ctx);
 		const mode = agentMode(ctx);
 		if (!mode || link || process.env.PI_REMOTE_DISABLE === "1") return;
+		liveRun = mode === "tui" && ctx.hasUI ? new LiveRunWidget(ctx.ui) : undefined;
 		link = new HubLink({
 			socketPath: hubSocketPath(remoteStateDir()),
 			logger,
@@ -87,10 +90,15 @@ export default function piRemoteControl(pi: ExtensionAPI): void {
 				if (ctx.hasUI) ctx.ui.setStatus("pi-remote", count > 0 ? `📱 Pi Remote (${count})` : undefined);
 			},
 			onNotice: (notice) => {
-				if (ctx.hasUI) ctx.ui.notify(notice.message, notice.level);
-				// The phone's run finished: reload this window from the session
-				// file so the terminal continues from the newest entry.
-				if (notice.handoffReady) pi.sendUserMessage("/remote takeover", { expandPromptTemplates: true });
+				// A reload after every run of another window would be noise.
+				if (ctx.hasUI && !notice.reload) ctx.ui.notify(notice.message, notice.level);
+				// The phone's (or the other window's) run finished: reload this
+				// window from the session file so it continues from the newest entry.
+				if (notice.handoffReady || notice.reload) pi.sendUserMessage("/remote takeover", { expandPromptTemplates: true });
+			},
+			onMirror: (from, type, payload) => liveRun?.handle(from, type, payload),
+			onConnectionChange: (connected) => {
+				if (!connected) liveRun?.clear();
 			},
 		});
 		link.start();
@@ -98,6 +106,8 @@ export default function piRemoteControl(pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", async () => {
 		questions.cancelAll();
+		liveRun?.clear();
+		liveRun = undefined;
 		link?.stop();
 		link = undefined;
 	});

@@ -9,7 +9,7 @@ A system that lets a paired iOS app control the Pi (`@earendil-works/pi-coding-a
 1. **Pi Remote Hub** (`hub/`) — one resident Node process per Mac (run by the Pi Hub menu bar app, `node hub/bin.mjs run`, or a launchd agent via `install`). Owns the TLS WebSocket server, Bonjour, pairing and trusted devices; keeps a registry of every running Pi over a local Unix socket; lets the phone browse the shared folders (`hub.json` `roots`), open any saved session, and starts `pi --mode rpc --session …` for it on demand (exits again after `idleExitMinutes`, default 3).
 2. **TypeScript Pi extension** (`extension/`) — loaded into every `pi` process. Registers its session with the hub (`HubLink`), runs forwarded commands against the live session, streams Pi events back, and provides `/remote pair|status|devices|revoke|rotate|takeover`. It never listens on the network.
 3. **iOS app** (`Pi/`) — native SwiftUI app built on **The Composable Architecture (TCA)**. Pairs once with the hub, then picks a session and drives it: send prompts, abort, compact, observe streaming assistant output and tool calls.
-4. **Pi Hub menu bar app** (`mac/PiHub`, SwiftPM, macOS 14+) — runs `node hub/bin.mjs run` as its child (restart with backoff 1/2/5/10/30 s; quitting stops it; an already-running hub is only observed) and shows the hub's `overview` (running Pi, phones, paired devices, roots) polled every 2 s over `hub.sock`. Built into `mac/build/Pi Hub.app` by `scripts/build-mac-app.mjs`.
+4. **Pi Hub menu bar app** (`mac/PiHub`, SwiftPM, macOS 26+, Liquid Glass) — runs `node hub/bin.mjs run` as its child (restart with backoff 1/2/5/10/30 s; quitting stops it; an already-running hub is only observed) and shows the hub's `overview` (running Pi, phones, paired devices, roots) polled every 2 s over `hub.sock`. Built into `mac/build/Pi Hub.app` by `scripts/build-mac-app.mjs`.
 
 User flow:
 
@@ -26,7 +26,7 @@ iPhone: pick folder → session (terminal / background / stopped) or New session
 iPhone: type prompt → Send             # phone → hub → owning Pi process → LLM → streaming back
 ```
 
-Every `pi` window registers with the hub by itself (start order does not matter); `PI_REMOTE_DISABLE=1` opts a process out. One writer per session: a terminal opening a session that a hub-started Pi holds takes it over (at once if idle, else after the run, then reloads via `/remote takeover`).
+Every `pi` window registers with the hub by itself (start order does not matter); `PI_REMOTE_DISABLE=1` opts a process out. One writer per session: a terminal opening a session that a hub-started Pi holds takes it over (at once if idle, else after the run, then reloads via `/remote takeover`). While it waits, the hub mirrors the busy Pi's events (`mirror` frames) to the terminal, which shows them in a live widget above the editor; two terminals on one session file mirror each other, and the idle one reloads when the other's run ends.
 
 ## Repository layout
 
@@ -50,7 +50,7 @@ pi-remote-ios/
 ├── extension/              TypeScript Pi extension (runs in every Pi process)
 │   ├── index.ts            entry point: HubLink per session, event stream, remote_question
 │   ├── command.ts          /remote command (talks to the hub's control ops)
-│   ├── agent/              HubLink (Unix socket to the hub) + SessionCommands (forwarded commands)
+│   ├── agent/              HubLink (Unix socket to the hub) + SessionCommands (forwarded commands) + LiveRun/LiveRunWidget (mirrored run)
 │   ├── hubwire/            NDJSON frames between hub and Pi processes
 │   ├── config.ts           defaults + env overrides
 │   ├── runtime/            RemoteControlRuntime (listen/stop/status/rotate, LAN follow, Bonjour) — used by the hub
@@ -61,7 +61,7 @@ pi-remote-ios/
 │   ├── net/                LAN address selection/peer filter + Bonjour advertiser (dns-sd)
 │   ├── storage.ts          ~/.pi/agent/pi-remote state dir (PI_REMOTE_STATE_DIR)
 │   ├── protocol/           wire envelopes + ProtocolDecoder + capabilities + error codes
-│   ├── pi/                 PiRemoteAdapter (seam around ExtensionAPI) + sanitizer + editPayload (unified-diff extraction/synthesis)
+│   ├── pi/                 PiRemoteAdapter (seam around ExtensionAPI) + sanitizer + editPayload (unified-diff extraction/synthesis) + history (4 MiB budget)
 │   ├── events/             RemoteEventStream (Pi event subscription + broadcast)
 │   ├── questions/          remote_question tool + reconnect-safe QuestionBroker
 │   ├── session/            structured phase monitor + run evidence collector
@@ -116,11 +116,13 @@ pi-remote-ios/
 | `HubService` | The hub: composes `RemoteServer` + `RemoteControlRuntime` + `DeviceTrust` + `AgentHub` + `AgentSpawner` + `SessionCatalog`; control ops (`status`, `pair` (+ `pairingLink`), `devices`, `revoke`, `rotate`, and for the menu bar app `overview`, `addRoot`, `removeRoot`, `setIdle`, `stopAgent` — hub-started Pi only; root and idle changes are saved to `hub.json`); idle exit of hub-started Pi; LAN listen retry. |
 | `HubSupervisor` (Swift) | The menu bar app's child hub: `node <checkout>/hub/bin.mjs run` with the PATH recorded at build time, log appended to `hub.log`, restart with backoff when it exits on its own, SIGTERM then SIGKILL on quit. Leaves a hub that answers on `hub.sock` alone (external). |
 | `HubModel` (Swift) | Polls `overview` every 2 s, keeps the supervisor reconciled, runs the menu's control requests, tracks the open pairing window, Open at Login (`SMAppService.mainApp`). |
-| `AgentHub` | Unix socket (`hub.sock`, 0600). Registers Pi processes (`hello`), routes phone requests (`request`/`reply` with per-request ids), fans events out to attached phones, replays an open question on attach, follows a Pi window across session switches (same pid re-registers), and enforces one writer per session (idle handoff at once, busy handoff after the run). |
+| `AgentHub` | Unix socket (`hub.sock`, 0600). Registers Pi processes (`hello`), routes phone requests (`request`/`reply` with per-request ids), fans events out to attached phones, replays an open question on attach, follows a Pi window across session switches (same pid re-registers), and enforces one writer per session (idle handoff at once, busy handoff after the run). Mirrors a busy writer's `pi.*` events to watching terminals (`mirror.start`/`mirror.stop` around them). |
 | `PhoneSession` | One phone connection: auth, `hub.listProjects/listSessions/listFolders/openSession/newSession/detach`, roots checks, answers stopped sessions from disk, wakes Pi on demand. |
 | `AgentSpawner` | Starts `pi [piArgs] --mode rpc [--session f]` with `PI_REMOTE_SPAWN_TOKEN`, cancels RPC dialog requests, stops via stdin EOF → SIGTERM → SIGKILL. |
 | `SessionIndex` | Incremental, read-only index of Pi's session JSONL files (per-file size/mtime/offset; parses appended bytes only). Results match `SessionManager.listAll`. |
-| `HubLink` | Extension side of the hub socket: hello with session + state, reconnect every 3 s, control requests, viewer count, notices (`handoffReady` triggers `/remote takeover`). |
+| `HubLink` | Extension side of the hub socket: hello with session + state, reconnect every 3 s, control requests, viewer count, notices (`handoffReady` and `reload` trigger `/remote takeover`), `mirror` frames for the live widget. |
+| `LiveRun` / `LiveRunWidget` | Pure model of a mirrored run (last 10 lines, 40 items) and its pi-tui widget (`pi-remote-live`) above a terminal's editor while another Pi writes the session. |
+| `selectHistory` | Newest `session.history` entries within the 4 MiB budget, used for live and stopped sessions alike. |
 | `SessionCommands` | Executes forwarded `session.*` / `interaction.answer` against `PiRemoteAdapter` + `QuestionBroker` inside the owning Pi process. |
 | `RemoteControlRuntime` | `start`/`stop`/`getStatus`/`rotateTrust`/`revokeDevice` for the hub's listener. Follows LAN address changes and keeps Bonjour in sync. |
 | `DeviceTrust` | Pairing window, code validation, token issue/verify, trusted device list, revocation. Wraps internal `PairingManager` + `TokenStore` over a `TrustStore`. |
@@ -133,7 +135,7 @@ pi-remote-ios/
 | `RemoteServer` | HTTPS (TLS ≥ 1.2) + WebSocket upgrade server, peer-address filter, connection registry, sequence numbers, per-device disconnect. Sessions come from a `createSession` factory. |
 | `PiRemoteAdapter` | Seam around Pi's active session operations. Owns state/history, prompt delivery, model/thinking changes, abort, compact, and execution context. Registration modules use only Pi's command, tool, or event registration surfaces. |
 | `RemoteEventStream` | Subscribes to Pi events (`message_*`, `tool_execution_*`, `agent_*`, …), maps to stable `pi.*` types, broadcasts only to authenticated clients, drives structured phase changes, and emits run completion evidence after `agent_settled`. Also attaches edit/write diffs to matching `pi.tool_end` events. |
-| `editPayload` | Pure helper: `extractEditPayload(toolResultEvent)` lifts Pi's own diff for `edit`, `synthesizeWriteDiff(toolResultEvent)` builds an all-added `/dev/null` diff for `write`. Both bypass the sanitizer's 20K-char cap on the `diff` field so the iOS app can render whole diffs regardless of size. |
+| `editPayload` | Pure helper: `extractEditPayload(toolResultEvent)` lifts Pi's own diff for `edit`, `synthesizeWriteDiff(toolResultEvent)` builds an all-added `/dev/null` diff for `write`. Both bypass the sanitizer's 20K-char cap on the `diff` field so the iOS app can render whole diffs; diffs over 4 MiB are dropped (the run still reports the edit). |
 | `QuestionBroker` | Owns one bounded pending `remote_question`, restores it after token reconnect, and resolves answer, abort, timeout, or server stop. |
 | `RemoteSessionMonitor` | Tracks `idle`, `running`, `queued`, `compacting`, `needsInput`, `completed`, and `failed` phases. |
 | `RunEvidenceCollector` | Accumulates bounded command outcomes, tool failures, and changed-file statistics until `agent_settled`. |

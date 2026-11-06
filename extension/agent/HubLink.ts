@@ -11,6 +11,7 @@ import {
 	type ForwardedEnvelope,
 	type HubFrame,
 	type HubNotice,
+	type MirrorSource,
 } from "../hubwire/frames.js";
 
 export type HubLinkOptions = {
@@ -25,6 +26,8 @@ export type HubLinkOptions = {
 	onRequest: (envelope: ForwardedEnvelope, reply: (type: string, payload?: unknown) => void) => void;
 	onViewers?: (count: number) => void;
 	onNotice?: (notice: HubNotice) => void;
+	/** Another Pi process's run on this session, to show live (see `LiveRun`). */
+	onMirror?: (from: MirrorSource, type: string, payload: unknown) => void;
 	onConnectionChange?: (connected: boolean) => void;
 	retryMs?: number;
 	connectSocket?: (path: string) => Socket;
@@ -157,7 +160,10 @@ export class HubLink {
 				return;
 			}
 			case "notice":
-				this.options.onNotice?.({ level: frame.level, message: frame.message, handoffReady: frame.handoffReady });
+				this.options.onNotice?.({ level: frame.level, message: frame.message, handoffReady: frame.handoffReady, reload: frame.reload });
+				return;
+			case "mirror":
+				this.options.onMirror?.(frame.from, frame.type, frame.payload);
 				return;
 			default:
 				return;

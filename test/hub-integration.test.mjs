@@ -116,6 +116,7 @@ function startAgent(socketPath, { file, cwd, name, mode = "tui", pid = nextPid++
 	const state = { isIdle: true, cwd, sessionFile: file, sessionName: name, phase: "idle" };
 	const prompts = [];
 	const notices = [];
+	const mirrors = [];
 	const viewerCounts = [];
 	const adapter = {
 		getState: () => ({ ...state }),
@@ -145,6 +146,7 @@ function startAgent(socketPath, { file, cwd, name, mode = "tui", pid = nextPid++
 		onRequest: (envelope, reply) => void commands.handle(decodeClientMessage(Buffer.from(JSON.stringify(envelope))), reply),
 		onViewers: (count) => viewerCounts.push(count),
 		onNotice: (notice) => notices.push(notice),
+		onMirror: (from, type, payload) => mirrors.push({ from, type, payload }),
 	});
 	link.start();
 	return {
@@ -153,6 +155,8 @@ function startAgent(socketPath, { file, cwd, name, mode = "tui", pid = nextPid++
 		pid,
 		prompts,
 		notices,
+		mirrors,
+		emit: (type, payload) => link.broadcast(type, payload),
 		viewerCounts,
 		questions,
 		setBusy(busy) {
@@ -610,24 +614,56 @@ test("a terminal waits for a busy hub-started Pi, then takes over and reloads", 
 		assert.equal(spawner.stopped.length, 0);
 		assert.equal(phone.has("hub.attached"), false);
 
+		// Meanwhile the terminal shows the phone's run live.
+		await eventually(() => terminal.mirrors.length === 1);
+		assert.equal(terminal.mirrors[0].type, "mirror.start");
+		assert.deepEqual(terminal.mirrors[0].from, { pid: background.pid, background: true });
+		const delta = { source: "pi", name: "message_update", data: { message: { role: "assistant", content: [{ type: "text", text: "half" }] } } };
+		background.emit("pi.message_delta", delta);
+		await eventually(() => terminal.mirrors.length === 2);
+		assert.deepEqual(terminal.mirrors[1].payload, delta);
+
 		background.setBusy(false);
 		const attached = await phone.next("hub.attached");
 		assert.equal(attached.payload.session.status, "terminal");
 		await eventually(() => terminal.notices.length === 2);
 		assert.equal(terminal.notices[1].handoffReady, true);
+		assert.equal(terminal.mirrors.at(-1).type, "mirror.stop");
 		await eventually(() => spawner.stopped.length === 1);
 	});
 });
 
-test("two terminals on one session file get a conflict warning", async () => {
+test("two terminals on one session file show each other's runs and reload after them", async () => {
 	await withHub(async ({ app, sessionsDir, agent, registered }) => {
 		const file = writeSession(sessionsDir, app, "shared");
 		const first = agent({ file, cwd: app });
 		await registered(first);
 		const second = agent({ file, cwd: app });
 		await eventually(() => second.notices.length === 1);
-		assert.match(second.notices[0].message, /also open in another Pi process/);
+		assert.match(second.notices[0].message, /also open in another Pi window/);
 		assert.deepEqual(first.notices, []);
+
+		first.setBusy(true);
+		first.emit("pi.tool_start", { source: "pi", name: "tool_execution_start", data: { toolCallId: "t1", toolName: "bash", args: { command: "ls" } } });
+		await eventually(() => second.mirrors.length === 2);
+		assert.deepEqual(second.mirrors.map((m) => m.type), ["pi.agent_start", "pi.tool_start"]);
+		assert.deepEqual(second.mirrors[0].from, { pid: first.pid, background: false });
+		assert.deepEqual(first.mirrors, []);
+
+		first.setBusy(false);
+		await eventually(() => second.notices.length === 2);
+		assert.equal(second.notices[1].reload, true);
+		assert.deepEqual(first.notices, []);
+
+		// And the other way round.
+		second.setBusy(true);
+		await eventually(() => first.mirrors.length === 1);
+		second.setBusy(false);
+		await eventually(() => first.notices.length === 1);
+		assert.equal(first.notices[0].reload, true);
+
+		second.stop();
+		await eventually(() => first.mirrors.at(-1).type === "mirror.stop");
 	});
 });
 

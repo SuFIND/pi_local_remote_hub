@@ -54,14 +54,28 @@ export type HubNotice = {
 	message: string;
 	/** The phone-side run that blocked a terminal takeover has finished. */
 	handoffReady?: boolean;
+	/** Another Pi window's run on this session finished; reload quietly to show it. */
+	reload?: boolean;
 };
+
+/** The Pi process whose run a `mirror` frame shows. */
+export type MirrorSource = { pid: number; background: boolean };
+
+/**
+ * Events of another Pi process on the same session file, so a terminal that
+ * cannot own the session yet shows that run live. `type` is the `pi.*` event
+ * type, or `mirror.start` (a run is already under way) / `mirror.stop`
+ * (nothing to show any more).
+ */
+export type MirrorFrame = { t: "mirror"; from: MirrorSource; type: string; payload?: unknown };
 
 export type HubFrame =
 	| { t: "welcome"; hubPid: number }
 	| { t: "request"; rid: string; envelope: ForwardedEnvelope }
 	| { t: "viewers"; count: number }
 	| { t: "controlResult"; rid: string; ok: boolean; result?: unknown; error?: string }
-	| ({ t: "notice" } & HubNotice);
+	| ({ t: "notice" } & HubNotice)
+	| MirrorFrame;
 
 /** Generous: tool results and diffs are already capped by the sanitizer. */
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;

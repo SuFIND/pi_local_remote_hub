@@ -33,6 +33,8 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 - Opens any of those sessions, answers history from disk while stopped, and starts Pi for it on demand.
 - Starts new sessions in a shared folder; hub-started Pi exits after three idle minutes.
 - Follows a Pi window across session switches and hands sessions over to a terminal that opens them.
+- Shows a run driven from the phone live in a terminal that opens the same session, then reloads it when the run ends; two terminals on one session mirror each other the same way.
+- Keeps each history answer under 4 MiB so long sessions load on the phone.
 
 ## Pi Hub menu bar app (macOS)
 

@@ -28,7 +28,11 @@ A `pi --mode rpc` process the hub launched for a phone. It exits after `idleExit
 
 ### Handoff
 
-Moving a session from a hub-started Pi to a terminal that opened it, so a session has one writer. Immediate when idle; after the current run otherwise, followed by `/remote takeover` in the terminal.
+Moving a session from a hub-started Pi to a terminal that opened it, so a session has one writer. Immediate when idle; after the current run otherwise, followed by `/remote takeover` in the terminal. Until then the terminal mirrors the run (see Mirror).
+
+### Mirror
+
+The hub forwarding a busy Pi's events to another terminal on the same session file, which shows them in a live widget instead of a stale transcript. It ends when that run ends; the terminal then reloads the session from disk.
 
 ### Remote client
 

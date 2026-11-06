@@ -59,6 +59,9 @@ type PendingRequest = { viewer: Viewer; requestId?: string; agentId: string; ans
 
 const ANSWERED_REPLY_TTL_MS = 10_000;
 
+/** Events a watching terminal needs to draw another process's run. */
+const MIRRORED_EVENTS = new Set(["pi.agent_start", "pi.agent_end", "pi.message_start", "pi.message_delta", "pi.message_end", "pi.tool_start", "pi.tool_end"]);
+
 /**
  * The hub's local side: every Pi process registers here over the Unix
  * socket, and phone requests are routed to the process that owns the
@@ -72,6 +75,10 @@ export class AgentHub {
 	private readonly followers = new Map<number, { viewers: Set<Viewer>; previous: AgentRecord; timer: NodeJS.Timeout }>();
 	/** hub-started owner → terminal waiting to take over once it is idle. */
 	private readonly pendingHandoffs = new Map<string, string>();
+	/** agentId → agents on the same session file that show its runs live. */
+	private readonly watchers = new Map<string, Set<string>>();
+	/** `pid:file` pairs already warned about a shared session (a reload re-registers). */
+	private readonly warnedConflicts = new Set<string>();
 	private seq = 0;
 
 	constructor(private readonly options: AgentHubOptions) {}
@@ -226,9 +233,24 @@ export class AgentHub {
 					this.handoff(other, record);
 				} else {
 					this.pendingHandoffs.set(other.agentId, record.agentId);
+					this.watch(record, other);
 					this.notice(record, {
 						level: "warning",
-						message: "Pi Remote: the phone is running this session right now. This window takes over and reloads the latest messages as soon as that run finishes; don't send prompts here until then.",
+						message: "Pi Remote: the phone is running this session right now. It is shown live above the editor; this window takes over and reloads the latest messages as soon as that run finishes. Don't send prompts here until then.",
+					});
+				}
+			} else if (!other.spawnToken && !record.spawnToken) {
+				// Two terminals on one file: each shows the other's runs live and
+				// reloads after them, so neither continues from a stale branch.
+				this.watch(record, other);
+				this.watch(other, record);
+				const key = `${record.pid}:${target}`;
+				if (!this.warnedConflicts.has(key)) {
+					if (this.warnedConflicts.size > 1_000) this.warnedConflicts.clear();
+					this.warnedConflicts.add(key);
+					this.notice(record, {
+						level: "warning",
+						message: `Pi Remote: this session is also open in another Pi window (pid ${other.pid}). Its runs show here live and this window reloads after each one; send prompts from one window at a time.`,
 					});
 				}
 			} else {
@@ -240,8 +262,37 @@ export class AgentHub {
 		}
 	}
 
+	/** `watcher` shows `watched`'s runs live until either goes away or the handoff completes. */
+	private watch(watcher: AgentRecord, watched: AgentRecord): void {
+		let set = this.watchers.get(watched.agentId);
+		if (!set) {
+			set = new Set();
+			this.watchers.set(watched.agentId, set);
+		}
+		set.add(watcher.agentId);
+		if (watched.busy) this.sendMirror(watcher, watched, "mirror.start");
+	}
+
+	private unwatch(watcher: AgentRecord, watched: AgentRecord): void {
+		const set = this.watchers.get(watched.agentId);
+		if (!set?.delete(watcher.agentId)) return;
+		if (set.size === 0) this.watchers.delete(watched.agentId);
+		this.sendMirror(watcher, watched, "mirror.stop");
+	}
+
+	private watchersOf(agent: AgentRecord): AgentRecord[] {
+		const ids = this.watchers.get(agent.agentId);
+		if (!ids) return [];
+		return [...ids].map((id) => this.agents.get(id)).filter((watcher): watcher is AgentRecord => watcher !== undefined);
+	}
+
+	private sendMirror(watcher: AgentRecord, watched: AgentRecord, type: string, payload?: unknown): void {
+		writeFrame(watcher.socket, { t: "mirror", from: { pid: watched.pid, background: Boolean(watched.spawnToken) }, type, payload });
+	}
+
 	private handoff(from: AgentRecord, to: AgentRecord): void {
 		this.pendingHandoffs.delete(from.agentId);
+		this.unwatch(to, from);
 		const viewers = new Set(from.viewers);
 		from.viewers.clear();
 		this.sendViewers(from);
@@ -257,17 +308,24 @@ export class AgentHub {
 	}
 
 	private handleAgentFrame(agent: AgentRecord, frame: AgentFrame): void {
+		const wasBusy = agent.busy;
 		if (frame.t === "event") {
 			agent.lastActivityAt = Date.now();
 			this.track(agent, frame.type, frame.payload);
 			for (const viewer of agent.viewers) viewer.deliver(frame.type, frame.payload);
+			if (MIRRORED_EVENTS.has(frame.type)) for (const watcher of this.watchersOf(agent)) this.sendMirror(watcher, agent, frame.type, frame.payload);
 			this.maybeCompleteHandoff(agent);
+			if (wasBusy && !agent.busy) this.runEnded(agent);
 			return;
 		}
 		if (frame.t === "reply") {
 			const pending = this.pending.get(frame.rid);
 			if (!pending) return;
-			if (frame.type === "state.changed") this.track(agent, frame.type, frame.payload);
+			if (frame.type === "state.changed") {
+				this.track(agent, frame.type, frame.payload);
+				this.maybeCompleteHandoff(agent);
+				if (wasBusy && !agent.busy) this.runEnded(agent);
+			}
 			if (frame.type === "response.ok" || frame.type === "response.error") {
 				if (pending.answered) return;
 				pending.answered = true;
@@ -316,9 +374,22 @@ export class AgentHub {
 		});
 	}
 
+	/** Terminals watching another terminal's run reload once it is over. */
+	private runEnded(agent: AgentRecord): void {
+		for (const watcher of this.watchersOf(agent)) {
+			this.notice(watcher, { level: "info", message: "Pi Remote: the other Pi window finished a run on this session; reloading.", reload: true });
+		}
+	}
+
 	private unregister(agent: AgentRecord): void {
 		if (this.agents.get(agent.agentId) !== agent) return;
 		this.agents.delete(agent.agentId);
+		for (const watcher of this.watchersOf(agent)) this.sendMirror(watcher, agent, "mirror.stop");
+		this.watchers.delete(agent.agentId);
+		for (const [watchedId, set] of this.watchers) {
+			set.delete(agent.agentId);
+			if (set.size === 0) this.watchers.delete(watchedId);
+		}
 		this.options.logger.info("hub_agent_gone", { agentId: agent.agentId, pid: agent.pid, reason: agent.exitReason ?? "exited" });
 
 		for (const [rid, pending] of this.pending) {
@@ -338,6 +409,12 @@ export class AgentHub {
 		agent.viewers.clear();
 		if (successor) {
 			this.moveViewers(viewers, successor);
+			// It ended without going idle (crash, stop); show what it wrote.
+			this.notice(successor, {
+				level: "info",
+				message: "Pi Remote: the phone's Pi stopped; this window now owns the session and is loading the latest messages.",
+				handoffReady: true,
+			});
 		} else if (viewers.size > 0) {
 			if (agent.exitReason === "idle") {
 				for (const viewer of viewers) viewer.agentGone(agent, "idle");
