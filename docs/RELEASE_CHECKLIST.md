@@ -63,5 +63,5 @@ npm publication is not required for the source preview. Before a later npm relea
 - [ ] Test a clean GitHub installation.
 - [ ] Confirm the first public CI run passes.
 - [ ] Enable GitHub private vulnerability reporting.
-- [ ] Tag `v0.1.0-preview.1` only after public CI and installation pass.
+- [ ] Tag `v0.1.0` only after public CI and installation pass.
 - [ ] Publish release notes with supported Pi, iOS, Xcode, Tuist, and Node versions.

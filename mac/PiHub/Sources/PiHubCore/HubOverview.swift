@@ -18,6 +18,8 @@ public struct HubOverview: Decodable, Equatable, Sendable {
 /// The hub's listener (`HubStatusView`); also the answer to `status` and `pair`.
 public struct HubStatus: Decodable, Equatable, Sendable {
   public var running: Bool
+  /// The hub's package version; nil from hubs before 0.1.0.
+  public var version: String?
   public var webSocketUrl: String?
   public var displayWebSocketUrl: String?
   public var fingerprintShort: String?

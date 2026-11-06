@@ -97,7 +97,7 @@ async function run(stateDir: string, configPath: string): Promise<number> {
 	const hub = new HubService({ stateDir, config, logger, configPath, logPath });
 	await hub.start();
 	const status = hub.status();
-	logger.info("hub_started", { url: status.displayWebSocketUrl, roots: config.roots, pid: process.pid });
+	logger.info("hub_started", { version: status.version, url: status.displayWebSocketUrl, roots: config.roots, pid: process.pid });
 	if (config.roots.length === 0) logger.warn("hub_no_roots", { hint: "node hub/bin.mjs roots add <dir>" });
 
 	watchFile(configPath, { interval: 2_000 }, () => {

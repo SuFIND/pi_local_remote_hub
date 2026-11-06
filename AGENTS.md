@@ -305,6 +305,11 @@ When making important changes:
 4. Update `docs/SECURITY.md` if security assumptions change.
 5. Update `docs/SWIFT_CLIENT_NOTES.md` if iOS expectations change.
 6. Update tests for protocol guarantees.
+7. Note user-visible changes in `CHANGELOG.md`.
+
+### Versioning
+
+One version for everything (0.1.0 at the first release): `package.json` (+ `package-lock.json`), which the hub reports (`extension/version.ts` → `status.version`, `GET /version`) and `scripts/build-mac-app.mjs` stamps into Pi Hub, and the iOS `MARKETING_VERSION` in `Project.swift` and `Pi/Pi.xcodeproj`. Bump them together with a `CHANGELOG.md` section and tag `vX.Y.Z` on `main`.
 
 ## Useful entry points
 

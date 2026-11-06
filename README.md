@@ -25,8 +25,8 @@ with or endorsed by Earendil Inc.
 
 ## Status
 
-The project is an early preview. The extension works as a Pi package, while the
-iOS app currently requires an Xcode build from source.
+Version 0.1.0 (see [CHANGELOG.md](CHANGELOG.md)). The extension works as a Pi
+package, while the iOS app and the Pi Hub menu bar app are built from source.
 
 The phone pairs once with the hub, browses the folders you share, and opens any
 Pi session in them: one running in a terminal, or a saved one that the hub
@@ -140,19 +140,19 @@ Review the extension source before installation. Pi packages run with your full 
 Install the tagged preview for all projects:
 
 ```bash
-pi install git:github.com/tornikegomareli/pi-remote-ios@v0.1.0-preview.1
+pi install git:github.com/tornikegomareli/pi-remote-ios@v0.1.0
 ```
 
 For the current project only, add `-l`:
 
 ```bash
-pi install -l git:github.com/tornikegomareli/pi-remote-ios@v0.1.0-preview.1
+pi install -l git:github.com/tornikegomareli/pi-remote-ios@v0.1.0
 ```
 
 Try it for one Pi process without changing settings:
 
 ```bash
-pi -e git:github.com/tornikegomareli/pi-remote-ios@v0.1.0-preview.1
+pi -e git:github.com/tornikegomareli/pi-remote-ios@v0.1.0
 ```
 
 For development from a local checkout:
@@ -363,6 +363,7 @@ scripts/export-app-icon.sh
 - [`PRIVACY.md`](PRIVACY.md): local data flow, storage, permissions, and deletion
 - [`SECURITY.md`](SECURITY.md): private vulnerability reporting
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md): remaining publication blockers
+- [`CHANGELOG.md`](CHANGELOG.md): what changed in each version
 
 ## License and branding
 

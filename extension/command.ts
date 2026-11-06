@@ -13,6 +13,8 @@ export type HubControl = {
 /** What the hub reports for `status` / `pair` (see `hub/HubService.ts`). */
 export type HubStatusView = {
 	running: boolean;
+	/** The hub's package version (package.json). */
+	version?: string;
 	webSocketUrl?: string;
 	displayWebSocketUrl?: string;
 	fingerprintShort?: string;
@@ -132,6 +134,7 @@ export function formatStatus(status: HubStatusView): string {
 	const pairing = status.deviceTrust.pairing;
 	const lines = [
 		"Pi Remote Hub is running",
+		...(status.version ? [`Version: ${status.version}`] : []),
 		`WebSocket: ${status.webSocketUrl ?? "unknown"}`,
 		`Fingerprint: ${status.fingerprintShort ?? "unknown"}`,
 		`Address: ${status.followsLanAddress ? "follows this Mac's LAN IP" : "fixed"}`,

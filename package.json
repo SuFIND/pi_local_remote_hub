@@ -1,6 +1,6 @@
 {
   "name": "pi-remote-ios",
-  "version": "0.1.0-preview.1",
+  "version": "0.1.0",
   "description": "Pi extension, LAN hub and native iOS companion for controlling Pi coding-agent sessions on your Mac from an iPhone.",
   "license": "MIT",
   "author": "Tornike Gomareli",

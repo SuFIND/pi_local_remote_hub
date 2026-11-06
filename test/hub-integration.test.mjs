@@ -692,6 +692,7 @@ test("pi-remote control ops: status reports roots, agents and the pinned URL", a
 		await registered(agent({ file: writeSession(sessionsDir, app, "x"), cwd: app }));
 		const status = await hub.control("status");
 		assert.equal(status.running, true);
+		assert.equal(status.version, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version);
 		assert.deepEqual(status.roots, [root]);
 		assert.equal(status.agents, 1);
 		assert.equal(status.idleExitMinutes, 3);

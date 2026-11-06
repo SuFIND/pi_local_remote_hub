@@ -135,7 +135,7 @@ enum MenuSnapshot {
 
   static let sampleJSON = """
   {"pid":6162,"startedAt":"2026-11-06T05:39:00.000Z",
-   "status":{"running":true,"webSocketUrl":"wss://192.168.1.20:3769/v1/ws#fp=Xk2Q","displayWebSocketUrl":"wss://192.168.1.20:3769/v1/ws",
+   "status":{"running":true,"version":"0.1.0","webSocketUrl":"wss://192.168.1.20:3769/v1/ws#fp=Xk2Q","displayWebSocketUrl":"wss://192.168.1.20:3769/v1/ws",
      "fingerprintShort":"3F2A 9C41 D07B 6E58","bonjour":{"active":true,"instanceName":"Pi · Mac"},"connections":1},
    "roots":["\(NSHomeDirectory())/Downloads/work","\(NSHomeDirectory())/Downloads/projects"],"idleExitMinutes":3,
    "agents":[

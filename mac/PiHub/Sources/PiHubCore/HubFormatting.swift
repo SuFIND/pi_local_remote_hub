@@ -84,6 +84,14 @@ public enum HubFormatting {
     return String(format: "%d:%02d", remaining / 60, remaining % 60)
   }
 
+  /// The app's version and build, and the hub's when it differs:
+  /// "0.1.0 (42)", "0.1.0 (42) · hub 0.2.0", "development build · hub 0.1.0".
+  public static func version(app: String?, build: String?, hub: String?) -> String {
+    let appText = app.map { version in build.map { "\(version) (\($0))" } ?? version } ?? "development build"
+    guard let hub, hub != app else { return appText }
+    return "\(appText) · hub \(hub)"
+  }
+
   /// "3 min", "1.5 min".
   public static func minutes(_ value: Double) -> String {
     value.rounded() == value ? "\(Int(value)) min" : String(format: "%.1f min", value)

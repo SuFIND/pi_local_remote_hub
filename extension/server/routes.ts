@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RemoteConfig } from "../config.js";
+import { PACKAGE_VERSION } from "../version.js";
 
 export type RouteContext = {
 	config: RemoteConfig;
@@ -17,6 +18,7 @@ export function handleHttpRoute(req: IncomingMessage, res: ServerResponse, conte
 	if (req.method === "GET" && url.pathname === "/version") {
 		sendJson(res, 200, {
 			server: "pi-remote-control",
+			version: PACKAGE_VERSION,
 			protocolVersion: context.config.protocolVersion,
 			webSocketPath: context.config.webSocketPath,
 		});

@@ -13,6 +13,7 @@ import { BonjourAdvertiser } from "../extension/net/BonjourAdvertiser.js";
 import { buildPairingDeepLink } from "../extension/runtime/pairingLink.js";
 import { RemoteControlRuntime } from "../extension/runtime/RemoteControlRuntime.js";
 import { RemoteServer } from "../extension/server/RemoteServer.js";
+import { PACKAGE_VERSION } from "../extension/version.js";
 import { AgentHub, type AgentRecord, type Viewer } from "./AgentHub.js";
 import { AgentSpawner, type AgentSpawnerOptions } from "./AgentSpawner.js";
 import { canonicalPath, isInsideRoots, saveHubConfig, type HubConfig } from "./HubConfig.js";
@@ -154,6 +155,7 @@ export class HubService implements HubCore {
 		const runtime = this.runtime.getStatus();
 		return {
 			...runtime,
+			version: PACKAGE_VERSION,
 			roots: this.config.roots,
 			agents: this.agents.list().length,
 			idleExitMinutes: this.config.idleExitMinutes,

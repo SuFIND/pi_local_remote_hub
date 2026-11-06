@@ -144,6 +144,14 @@ private struct GeneralPane: View {
           LabeledContent("Process") {
             Text(processText(overview))
           }
+          LabeledContent("Version") {
+            Text(HubFormatting.version(
+              app: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              hub: status.version
+            ))
+            .textSelection(.enabled)
+          }
           if let error = status.lastError {
             Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
           }

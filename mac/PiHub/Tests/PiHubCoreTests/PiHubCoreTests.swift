@@ -85,6 +85,10 @@ struct HubOverviewTests {
     #expect(HubFormatting.countdown(until: "2026-11-06T01:59:00.000Z", now: now) == nil)
     #expect(HubFormatting.minutes(3) == "3 min")
     #expect(HubFormatting.minutes(0.5) == "0.5 min")
+    #expect(HubFormatting.version(app: "0.1.0", build: "42", hub: "0.1.0") == "0.1.0 (42)")
+    #expect(HubFormatting.version(app: "0.1.0", build: "42", hub: "0.2.0") == "0.1.0 (42) · hub 0.2.0")
+    #expect(HubFormatting.version(app: "0.1.0", build: nil, hub: nil) == "0.1.0")
+    #expect(HubFormatting.version(app: nil, build: nil, hub: "0.1.0") == "development build · hub 0.1.0")
   }
 }
 
