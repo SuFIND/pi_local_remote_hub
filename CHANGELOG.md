@@ -1,8 +1,9 @@
 # Changelog
 
-Notable changes to Pi Remote. Versions follow [Semantic Versioning](https://semver.org);
-the Pi package (`package.json`), the iOS app (`MARKETING_VERSION`) and Pi Hub share one
-version.
+Notable changes to the computer side of Pi Local Remote: the Pi Remote Hub, the Pi
+extension and the Pi Hub menu bar app. Versions follow [Semantic Versioning](https://semver.org);
+`package.json` holds the version and Pi Hub takes it. The iOS app keeps its own changelog in
+[pi_local_remote_ios](https://github.com/SuFIND/pi_local_remote_ios).
 
 ## 0.1.0 — 2026-11-06
 
@@ -22,15 +23,8 @@ for free, with no SSH, cloud relay or terminal multiplexer.
   from the phone is shown live in that terminal, which reloads when the run ends.
 - History answers stay under 4 MiB so long sessions load on the phone.
 - `status`, `GET /version` and the hub log report the version.
-
-### iOS app
-
-- Pairs by QR code or six-digit code, finds Macs nearby over Bonjour, and reconnects after
-  network changes and Wi-Fi address changes.
-- Session browser: running and recent sessions first, each shared folder as a collapsible
-  tree of the projects Pi ran in, and debounced search with highlighted matches.
-- Assistant Markdown laid out like the terminal: paragraphs, nested lists, tables, quotes.
-- The Session Inspector shows the app version.
+- The project is split into this repository and pi_local_remote_ios, keeping the history of
+  the original pi-remote-ios by Tornike Gomareli.
 
 ### Pi Hub (macOS menu bar app)
 
@@ -38,8 +32,3 @@ for free, with no SSH, cloud relay or terminal multiplexer.
 - A "P" in the menu bar marks a connected iPhone and a hub that is starting or down.
 - Its panel shows how many iPhones are paired and in use, and Pair iPhone; a settings window
   holds General, Shared Folders, iPhones and Pi Sessions. Liquid Glass on macOS 26 and later.
-
-### Build
-
-- The Xcode project reads the signing team and bundle identifier from the git-ignored
-  `Pi/Signing.local.xcconfig`.

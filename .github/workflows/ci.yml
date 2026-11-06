@@ -29,24 +29,12 @@ jobs:
       - run: npm audit --omit=dev
       - run: npm pack --dry-run --ignore-scripts
 
-  ios:
-    name: iOS app
+  pihub:
+    name: Pi Hub (macOS)
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v2
-      - name: Resolve Swift packages
-        run: tuist install
-      - name: Generate iOS workspace
-        run: tuist generate --no-open
-      - name: Test on iOS Simulator
-        run: >-
-          xcodebuild
-          -workspace Pi.xcworkspace
-          -scheme Pi
-          -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
-          -skipMacroValidation
-          CODE_SIGNING_ALLOWED=NO
-          test
+      - name: Test PiHubCore
+        run: swift test --package-path mac/PiHub

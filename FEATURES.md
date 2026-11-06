@@ -1,31 +1,6 @@
 # Product functionality
 
-Pi Remote connects an iOS device to one active Pi terminal session on the same trusted local network. It provides remote supervision and control without changing Pi’s tool permissions or execution model.
-
-## iOS app
-
-- Pairs with a running Pi session by scanning its QR code in the app or entering its host URL and six-digit code.
-- Stores the issued device token in Keychain for later authenticated reconnects.
-- Restores session state, transcript history, and pending questions after reconnecting.
-- Opens on running and recent sessions across the shared folders, then the shared folders themselves.
-- Shows a shared folder as its own sessions plus a collapsible tree of the projects inside it; levels without sessions fold into one row, and folders with no sessions at all stay under "Other Folders".
-- Searches sessions by name, prompts and folder, with the matching text quoted.
-- Sends prompts to the active session.
-- Queues a prompt for later delivery or steers the current run while Pi is busy.
-- Aborts the current run and requests session compaction.
-- Tracks structured session phases, including running, queued, needs input, compacting, completed, and failed.
-- Tracks the connected host, working directory, Git branch, model, thinking level, and context usage when available.
-- Lists available models and changes the active model and thinking level.
-- Lists Pi skills and invokes them in the active host session.
-- Receives assistant output and tool execution events as they occur.
-- Answers reconnect-safe questions raised by Pi.
-- Receives structured completion evidence, including command outcomes, tool failures, changed files, and line counts.
-- Retains edit and write diffs for review when the extension provides them.
-- Reconnects after temporary network loss with bounded backoff and keepalive checks.
-- Uses an iOS 26 continued-processing task to monitor a user-started run after minimization.
-- Sends generic local notifications when Pi needs input or completes a monitored run.
-- Keeps prompts, responses, commands, paths, and credentials out of system activity and notification content.
-- Keeps sensitive session content out of stored diagnostic records.
+Pi Local Remote connects an iPhone to the Pi sessions on a computer on the same trusted local network. It provides remote supervision and control without changing Pi’s tool permissions or execution model. This repository holds the computer side; the iPhone app is in [pi_local_remote_ios](https://github.com/SuFIND/pi_local_remote_ios).
 
 ## Pi Remote Hub
 
@@ -74,11 +49,10 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 
 ## Scope and security
 
-- Controls one active Pi session in the current Pi process.
+- Serves the Pi sessions on one computer; a phone drives one of them at a time.
 - Requires the iPhone and Pi host to share a trusted local network.
-- Uses authenticated but unencrypted `ws://` traffic on the local network.
+- Encrypts traffic with TLS (`wss://`); the iPhone pins the hub's self-signed certificate.
 - Grants terminal-equivalent control to a paired device.
 - Does not add approval gates around Pi tools.
 - Does not support queue editing or removal.
-- Does not provide multi-host or multi-session management.
-- Does not use APNs; background monitoring ends if iOS expires the task or the user removes the app from the app switcher.
+- Does not use APNs; background monitoring on the iPhone ends if iOS expires the task or the user removes the app from the app switcher.

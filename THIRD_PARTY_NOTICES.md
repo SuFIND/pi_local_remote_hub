@@ -33,14 +33,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 The MIT license grants copyright permission. It does not grant trademark
-rights. Pi Remote for iOS is an independent community project and is not
+rights. Pi Local Remote is an independent community project and is not
 endorsed by Earendil Inc.
 
 ## Package dependencies
 
-The iOS app uses [Aurora](https://github.com/tornikegomareli/Aurora) for its
-Metal-backed session activity glow. Aurora is distributed under the MIT License.
-
-Node and Swift package dependencies remain under their respective licenses.
-Their source repositories and resolved versions are listed in `package-lock.json`
-and `Tuist/Package.resolved`.
+Node package dependencies remain under their respective licenses. Their source
+repositories and resolved versions are listed in `package-lock.json`. Pi Hub
+(`mac/PiHub`) has no third-party Swift packages. The iOS app's dependencies are
+listed in pi_local_remote_ios.

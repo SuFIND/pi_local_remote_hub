@@ -1,16 +1,18 @@
 # Contributing
 
-Pi Remote for iOS contains a Pi extension and an iOS app. Changes often cross
-the WebSocket protocol, TypeScript implementation, Swift types, and documentation.
+pi_local_remote_hub contains the Pi Remote Hub, the Pi extension and the Pi Hub
+menu bar app. The iOS app is in
+[pi_local_remote_ios](https://github.com/SuFIND/pi_local_remote_ios). Changes often
+cross the WebSocket protocol, the TypeScript implementation, the Swift types in
+the iOS app, and documentation.
 
 ## Setup
 
 Requirements:
 
 - Node.js 22.19 or newer
-- Pi (`@earendil-works/pi-coding-agent` 0.83.0)
-- Xcode 26.2 or newer
-- Tuist 4.202.6, pinned in `.mise.toml`
+- Pi (`@earendil-works/pi-coding-agent` 1.5.0)
+- Xcode 26 or newer with the macOS 26 SDK, for Pi Hub
 - An iPhone and Mac on the same trusted network for physical-device testing
 
 Install Node dependencies:
@@ -25,18 +27,10 @@ Run Pi with the extension directly:
 pi -e ./extension/index.ts
 ```
 
-Generate the iOS workspace and run its tests:
+Build and open the menu bar app:
 
 ```bash
-mise trust
-mise install
-tuist install
-tuist generate --no-open
-xcodebuild -workspace Pi.xcworkspace \
-  -scheme Pi \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  -skipMacroValidation \
-  test
+node scripts/build-mac-app.mjs --install
 ```
 
 ## Checks
@@ -45,19 +39,14 @@ Before opening a pull request, run:
 
 ```bash
 npm run check
-tuist install
-tuist generate --no-open
-xcodebuild -workspace Pi.xcworkspace \
-  -scheme Pi \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  -skipMacroValidation \
-  test
+swift test --package-path mac/PiHub
 ```
 
-Before a release, run live iOS acceptance with a configured Pi model:
+Before a release, run live iOS acceptance with a configured Pi model from a
+pi_local_remote_ios checkout next to this one:
 
 ```bash
-scripts/run-e2e.mjs
+../pi_local_remote_ios/scripts/run-e2e.mjs
 ```
 
 `scripts/verify-linux-e2e.mjs` (Linux acceptance with Docker) still drives the
@@ -68,10 +57,8 @@ removed `/remote start` and needs porting to the hub.
 - Keep `extension/index.ts` as a small entry point.
 - Keep direct Pi calls inside `PiRemoteAdapter`.
 - Keep socket lifecycle inside `RemoteConnection`.
-- Keep authenticated command handling inside `RemoteSession`.
-- Mirror wire-format changes in `Pi/Pi/Core/Protocol/`.
-- Treat `Project.swift` and `Tuist/Package.swift` as the iOS project source of truth.
-- Regenerate after adding source files or changing project settings.
+- Keep phone protocol handling inside `PhoneSession` and session commands inside `SessionCommands`.
+- Mirror wire-format changes in `Pi/Pi/Core/Protocol/` in pi_local_remote_ios.
 - Update `docs/PROTOCOL.md` when messages change.
 - Update `docs/SECURITY.md` when security assumptions change.
 - Add tests for protocol, authentication, and runtime behavior.

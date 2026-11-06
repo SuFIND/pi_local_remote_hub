@@ -3,21 +3,12 @@ npm-debug.log*
 
 .DS_Store
 xcuserdata/
-Pi/Signing.local.xcconfig
 *.xcuserstate
-DerivedData/
-/Derived/
-/Pi.xcodeproj/
-/Pi.xcworkspace/
-/Tuist/.build/
-/.ralph/
-*.xcresult
 
 .env
 .env.*
 !.env.example
 *.p12
-*.mobileprovision
 *.cer
 *.key
 *.pem

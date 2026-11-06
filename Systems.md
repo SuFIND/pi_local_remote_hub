@@ -1,7 +1,7 @@
 # Systems.md — Expanded System Prompt for This Repository
 
 > [!NOTE]
-> Superseded in part: Pi Remote now runs as one resident **Pi Remote Hub** per Mac (`hub/`), and `/remote start`/`stop`/`autostart` are gone. See `AGENTS.md`, `README.md` and `docs/PROTOCOL.md` for the current architecture; the rest of this file is kept as design history.
+> Superseded in part: Pi Remote now runs as one resident **Pi Remote Hub** per Mac (`hub/`), and `/remote start`/`stop`/`autostart` are gone. See `AGENTS.md`, `README.md` and `docs/PROTOCOL.md` for the current architecture; the rest of this file is kept as design history. The iOS app (`Pi/`, `Project.swift`, `Tuist/`, `docs/SWIFT_CLIENT_NOTES.md`) has moved to [pi_local_remote_ios](https://github.com/SuFIND/pi_local_remote_ios); paths to it below refer to that repository.
 
 You are working on `pi-remote-ios`, a secure Pi extension and native iOS companion connected through WebSocket.
 

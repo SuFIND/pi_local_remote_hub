@@ -19,7 +19,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDir = join(root, "mac", "PiHub");
 const appName = "Pi Hub";
 const appDir = join(root, "mac", "build", `${appName}.app`);
-const bundleId = process.env.PI_HUB_BUNDLE_ID ?? "com.insanearts.PiHub";
+const bundleId = process.env.PI_HUB_BUNDLE_ID ?? "io.github.sufind.PiHub";
 const install = process.argv.includes("--install");
 
 const run = (command, args, options = {}) =>
@@ -34,7 +34,8 @@ mkdirSync(join(appDir, "Contents", "MacOS"), { recursive: true });
 mkdirSync(join(appDir, "Contents", "Resources"), { recursive: true });
 cpSync(join(binDir, "PiHub"), join(appDir, "Contents", "MacOS", "PiHub"));
 
-const iconSource = join(root, "Pi", "Pi", "Assets.xcassets", "AppIcon.appiconset", "AppIcon.png");
+// The Pi Remote app icon, copied from pi_local_remote_ios (Pi/Design/AppIcon-LiveSession.svg).
+const iconSource = join(packageDir, "Resources", "AppIcon.png");
 const hasIcon = existsSync(iconSource) && buildIcon(iconSource, join(appDir, "Contents", "Resources", "AppIcon.icns"));
 
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;

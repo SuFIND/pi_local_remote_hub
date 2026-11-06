@@ -1,32 +1,40 @@
-# Pi Remote for iOS
+# Pi Local Remote — Hub
 
 <p align="center">
   <img src="./docs/assets/pi-remote-hero.webp" width="100%" alt="Pi Remote controlling the same live session in Ghostty and the iPhone Simulator">
 </p>
 
-[![CI](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml/badge.svg)](https://github.com/tornikegomareli/pi-remote-ios/actions/workflows/ci.yml)
+[![CI](https://github.com/SuFIND/pi_local_remote_hub/actions/workflows/ci.yml/badge.svg)](https://github.com/SuFIND/pi_local_remote_hub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
 
-Control the [Pi](https://pi.dev) coding-agent sessions on your Mac from a native iPhone app.
+Control the [Pi](https://pi.dev) coding-agent sessions on your Mac from a native iPhone app,
+over the local network: free, with no SSH, cloud relay or terminal multiplexer.
 
-This repository contains all three parts:
+Pi Local Remote has two repositories:
 
-- **Pi Remote Hub** (`hub/`): one resident process per Mac that serves the phone
-  on the LAN (TLS, Bonjour, pairing) and starts Pi for sessions the phone opens;
-- a TypeScript **Pi extension** that registers every Pi window with the hub;
-- a SwiftUI **iOS app** that connects, authenticates, and controls a session.
+- **pi_local_remote_hub** (this one) — everything that runs on the computer:
+  - **Pi Remote Hub** (`hub/`): one resident process per Mac that serves the phone
+    on the LAN (TLS, Bonjour, pairing) and starts Pi for sessions the phone opens;
+  - the TypeScript **Pi extension** (`extension/`) that registers every Pi window with the hub;
+  - **Pi Hub** (`mac/PiHub`), the macOS menu bar app that runs the hub. A Windows
+    counterpart is planned and will live next to it.
+- [**pi_local_remote_ios**](https://github.com/SuFIND/pi_local_remote_ios) — the SwiftUI
+  iOS app that pairs with the hub and drives a session.
+
+It started as a fork of [pi-remote-ios](https://github.com/tornikegomareli/pi-remote-ios)
+by Tornike Gomareli, whose commits are kept in the history of both repositories.
 
 > [!WARNING]
 > A paired phone can submit prompts that cause Pi to run shell commands. Treat
 > remote access as terminal access to your account and current project.
 
-Pi Remote for iOS is an independent community project. It is not affiliated
+Pi Local Remote is an independent community project. It is not affiliated
 with or endorsed by Earendil Inc.
 
 ## Status
 
-Version 0.1.0 (see [CHANGELOG.md](CHANGELOG.md)). The extension works as a Pi
-package, while the iOS app and the Pi Hub menu bar app are built from source.
+Version 0.1.0 (see [CHANGELOG.md](CHANGELOG.md)). The extension and hub work as a Pi
+package, and the Pi Hub menu bar app is built from source.
 
 The phone pairs once with the hub, browses the folders you share, and opens any
 Pi session in them: one running in a terminal, or a saved one that the hub
@@ -34,61 +42,10 @@ resumes in the background (and stops again after three idle minutes). It opens
 on the running and recent sessions, searches sessions by name, prompts and
 folder, and shows each shared folder as a tree of the projects Pi ran in.
 
-## iOS app
-
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <img src="./docs/assets/pi-remote-aurora.webp" width="100%" alt="Aurora Glow around an active Pi run">
-      <br><strong>Aurora Glow</strong><br>
-      The screen edge and run shelf show active work.
-    </td>
-    <td align="center" width="50%">
-      <img src="./docs/assets/pi-remote-skills.webp" width="100%" alt="Pi skill autocomplete in the iOS composer">
-      <br><strong>Skills</strong><br>
-      Search host-side skills from the composer.
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <img src="./docs/assets/pi-remote-models.webp" width="100%" alt="Model and thinking-level controls">
-      <br><strong>Model &amp; Thinking</strong><br>
-      Change the active model and thinking level.
-    </td>
-    <td align="center" width="50%">
-      <img src="./docs/assets/pi-remote-queue.webp" width="100%" alt="A queued follow-up while Pi is working">
-      <br><strong>Queued follow-up</strong><br>
-      Add a message without interrupting the current run.
-    </td>
-  </tr>
-</table>
-
-## What it can do
-
-- Pair through a six-digit code or QR deep link.
-- Store the device token in iOS Keychain.
-- Reconnect with bounded backoff and keepalive checks.
-- Send prompts immediately, queue follow-ups, or steer Pi's active work.
-- Show sending failures inline and retry them without retyping.
-- Abort and compact the active session.
-- Change the active model and thinking level.
-- Discover and invoke Pi skills through slash autocomplete.
-- Show host, project, branch, model, and structured session status.
-- Answer blocking Pi questions through first-class mobile cards.
-- Show an Aurora edge glow while Pi is working.
-- Stream assistant output and grouped tool execution events.
-- Copy or share completed assistant responses.
-- Restore current branch history and pending questions after reconnecting.
-- Continue monitoring a user-started run after the app is minimized on iOS 26.
-- Receive privacy-safe local alerts when Pi needs input or finishes.
-- Summarize commands, failures, and changed files after Pi settles.
-- Render edit and write diffs natively on iOS.
-- Connect an iPhone and Pi host on the same local network.
-
 ## How it works
 
 ```text
-iPhone app
+iPhone app (pi_local_remote_ios)
     │ wss:// on the LAN (pinned TLS, paired token)
     ▼
 Pi Remote Hub  (Pi Hub menu bar app or launchd agent, ~/.pi/agent/pi-remote/)
@@ -105,29 +62,18 @@ is running for the phone, the terminal takes over (immediately if idle, after
 the current run otherwise, reloading the newest messages by itself). Until
 then the terminal shows the phone's run live above its editor, and two
 terminals on the same session do the same for each other. The
-protocol is versioned and documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
-
-When a user sends a prompt, the iOS app submits an iOS 26 continued-processing
-task. The system provides a Live Activity while the app monitors the run in the
-background. Pi Remote sends generic local notifications for needs-input and
-completion events. These surfaces never contain prompts, responses, commands,
-paths, or credentials.
-
-Background monitoring is best-effort. It stops if the user removes the app from
-the app switcher, the system expires the task, or the local connection cannot be
-restored. Pi continues running on the host computer. This local-only path does not use APNs.
+protocol is versioned and documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md);
+the iOS app implements the client side.
 
 ## Compatibility
 
-| Component | Preview baseline | Validation |
+| Component | Baseline | Validation |
 |---|---|---|
 | Pi | 1.5.0 | Extension, protocol, and live-prompt E2E |
 | Node.js | 22.19 or newer | Ubuntu CI and Debian Bookworm E2E |
-| macOS host | Current macOS | Physical iPhone acceptance |
+| macOS host | macOS 26 or newer for Pi Hub; current macOS for the hub alone | Physical iPhone acceptance |
 | Linux host | Node 22 on Debian Bookworm | Docker protocol E2E; physical iPhone-to-Linux LAN testing remains open |
-| Xcode | 27.1 or newer | Checked-in `Pi/Pi.xcodeproj`, Simulator, and signed device builds |
-| Tuist (optional) | 4.202.6 | Only for regenerating from `Project.swift`; pinned in `.mise.toml` |
-| iOS | 26.2 or newer | Current deployment target |
+| iOS app | pi_local_remote_ios 0.1.0 | Protocol version 1 |
 
 The iPhone and Pi host must share a local network. On Linux, allow inbound TCP traffic on port `3769`. On macOS, allow incoming connections for `node` when the firewall asks.
 
@@ -137,35 +83,38 @@ The hub binds the Mac's private LAN address (preferring `en0`), skips VPN, bridg
 
 Review the extension source before installation. Pi packages run with your full user permissions.
 
-Install the tagged preview for all projects:
+Install the tagged release for all projects:
 
 ```bash
-pi install git:github.com/tornikegomareli/pi-remote-ios@v0.1.0
+pi install git:github.com/SuFIND/pi_local_remote_hub@v0.1.0
 ```
 
 For the current project only, add `-l`:
 
 ```bash
-pi install -l git:github.com/tornikegomareli/pi-remote-ios@v0.1.0
+pi install -l git:github.com/SuFIND/pi_local_remote_hub@v0.1.0
 ```
 
 Try it for one Pi process without changing settings:
 
 ```bash
-pi -e git:github.com/tornikegomareli/pi-remote-ios@v0.1.0
+pi -e git:github.com/SuFIND/pi_local_remote_hub@v0.1.0
 ```
 
 For development from a local checkout:
 
 ```bash
-git clone https://github.com/tornikegomareli/pi-remote-ios.git
-cd pi-remote-ios
+mkdir pi_local_remote && cd pi_local_remote
+git clone https://github.com/SuFIND/pi_local_remote_hub.git
+git clone https://github.com/SuFIND/pi_local_remote_ios.git   # the iOS app, if you build it
+cd pi_local_remote_hub
 npm ci
 pi -e ./extension/index.ts
 ```
 
 The repository also includes `.pi/settings.json`, so running `pi` from its root
-loads the local extension automatically.
+loads the local extension automatically. The iOS repository's E2E script looks
+for this checkout next to it (`../pi_local_remote_hub`).
 
 ## Run the hub
 
@@ -225,44 +174,11 @@ Logs go to `~/.pi/agent/pi-remote/hub.log`.
 
 Pi windows find the hub on their own; start the hub before or after them.
 
-## Build the iOS app
-
-The iOS app is source-only. You need an Apple ID that Xcode can use for device signing.
-
-Open the checked-in project. No Tuist or mise is needed:
-
-```bash
-open Pi/Pi.xcodeproj
-```
-
-A free personal team is enough. Put your team and a bundle identifier you own in `Pi/Signing.local.xcconfig` (git ignores it; `Pi/Signing.xcconfig` explains it):
-
-```
-PI_DEVELOPMENT_TEAM = ABCDE12345
-PI_BUNDLE_IDENTIFIER = com.yourname.PiRemote
-```
-
-Choosing a team under **Signing & Capabilities** instead also works, but edits the checked-in project. Select your iPhone and press **Run**. On the first install, trust the developer under **Settings → General → VPN & Device Management**. Free-team builds expire after seven days; run again from Xcode to renew.
-
-Aurora's shader needs the Metal toolchain: `xcodebuild -downloadComponent MetalToolchain`.
-
-For a Simulator build:
-
-```bash
-xcodebuild -project Pi/Pi.xcodeproj \
-  -scheme Pi \
-  -destination 'generic/platform=iOS Simulator' \
-  -skipMacroValidation \
-  build
-```
-
-The Simulator does not provide the VisionKit camera scanner. Pair by pasting the `wss://` URL printed by `node hub/bin.mjs pair` and entering the code.
-
-`Project.swift` + `Tuist/` remain for optional Tuist users (`tuist generate` writes `Pi.xcworkspace` at the repo root). Keep package pins in both places in sync.
-
 ## Pair and connect
 
-Run `node hub/bin.mjs pair` (or `/remote pair` in any Pi window). The hub serves
+Build and install the iPhone app from
+[pi_local_remote_ios](https://github.com/SuFIND/pi_local_remote_ios), then run
+`node hub/bin.mjs pair` (or `/remote pair` in any Pi window). The hub serves
 a TLS WebSocket (`wss://`) on the Mac's private LAN address and advertises it
 over Bonjour (`_pi-remote._tcp`). Pairing prints the URL with the certificate
 pin (`#fp=…`), the short host fingerprint, a short-lived pairing code, and a QR
@@ -301,7 +217,7 @@ Set `PI_REMOTE_DISABLE=1` to keep one Pi process from registering with the hub.
 
 ## Development
 
-Install dependencies and run extension checks:
+Install dependencies and run the extension and hub checks:
 
 ```bash
 npm ci
@@ -315,59 +231,45 @@ swift test --package-path mac/PiHub
 PI_HUB_SNAPSHOT=/tmp/menu.png "$(swift build --package-path mac/PiHub --show-bin-path)/PiHub"   # writes menu-{light,dark,pairing}.png, menu-icons-*.png, menu-settings-*.png
 ```
 
-Run the iOS tests:
-
-```bash
-xcodebuild -project Pi/Pi.xcodeproj \
-  -scheme Pi \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  -skipMacroValidation \
-  test
-```
-
 The test suite covers protocol decoding, authentication, event mapping,
 question recovery, run evidence, diff payloads, the session index, and hub
 integration (phones over pinned `wss://`, Pi processes over the hub socket,
 background start, idle exit, session switches, and terminal handoff).
 
-Run the full iOS E2E test against a real hub, the Pi it starts, and a configured model:
-
-```bash
-scripts/run-e2e.mjs
-```
-
-It pairs, opens the shared folder, starts a session, prompts, and checks background return, cold-launch resume, and reconnect after a hub restart. If several matching Simulators exist, set `PI_E2E_SIMULATOR_ID`. Set `PI_E2E_MODEL` to use another configured model, and `PI_E2E_EXTENSIONS` (comma-separated paths) when that model's provider is registered by an extension. The run uses a throwaway `PI_REMOTE_STATE_DIR`, `PI_CODING_AGENT_SESSION_DIR` and shared folder, so it never touches your paired devices or sessions.
+The full iPhone E2E run (a real hub, the Pi it starts and a configured model,
+driven by the iOS UI tests) lives in the iOS repository as `scripts/run-e2e.mjs`
+and uses this checkout from `../pi_local_remote_hub` (or `PI_LOCAL_REMOTE_HUB`).
 
 `scripts/verify-linux-e2e.mjs` (Linux acceptance through Docker) still drives the removed `/remote start` and needs porting to the hub.
 
-Use `examples/edit-diff-playground.ts` to exercise edit and write diff rendering
-from a connected phone without modifying application source.
+## Repository layout
 
-The live-session app icon source is `Pi/Design/AppIcon-LiveSession.svg`.
-Regenerate its light, dark, and tinted variants with Inkscape and ImageMagick:
-
-```bash
-brew install --cask inkscape
-brew install imagemagick
-scripts/export-app-icon.sh
+```text
+extension/     Pi extension, loaded into every Pi process
+hub/           Pi Remote Hub (resident LAN server and CLI)
+mac/PiHub/     Pi Hub, the macOS menu bar app (SwiftPM)
+test/          Node test suite
+scripts/       build-mac-app.mjs, verify-linux-e2e.mjs
+docs/          protocol, security, release checklist
 ```
 
 ## Documentation
 
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md): WebSocket envelopes, commands, events, and error codes
 - [`docs/SECURITY.md`](docs/SECURITY.md): threat model and security invariants
-- [`docs/SWIFT_CLIENT_NOTES.md`](docs/SWIFT_CLIENT_NOTES.md): iOS integration behavior
-- [`docs/TUIST_MIGRATION.md`](docs/TUIST_MIGRATION.md): generated-project setup and migration decisions
 - [`PLAN.md`](PLAN.md): architecture and implementation status
+- [`CONTEXT.md`](CONTEXT.md): domain glossary
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): development and contribution rules
 - [`PRIVACY.md`](PRIVACY.md): local data flow, storage, permissions, and deletion
 - [`SECURITY.md`](SECURITY.md): private vulnerability reporting
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md): remaining publication blockers
 - [`CHANGELOG.md`](CHANGELOG.md): what changed in each version
+- iOS client notes: [`docs/SWIFT_CLIENT_NOTES.md`](https://github.com/SuFIND/pi_local_remote_ios/blob/main/docs/SWIFT_CLIENT_NOTES.md) in pi_local_remote_ios
 
 ## License and branding
 
-Project code is available under the [MIT License](LICENSE).
+Project code is available under the [MIT License](LICENSE). It keeps the copyright
+notice of the original pi-remote-ios project.
 
 The Pi logo and animation are adapted from Pi's MIT-licensed website and press
 kit. Their copyright notice is preserved in

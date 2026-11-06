@@ -1,22 +1,25 @@
 {
-  "name": "pi-remote-ios",
+  "name": "pi-local-remote-hub",
   "version": "0.1.0",
-  "description": "Pi extension, LAN hub and native iOS companion for controlling Pi coding-agent sessions on your Mac from an iPhone.",
+  "description": "Pi extension, LAN hub and macOS menu bar app for controlling the Pi coding-agent sessions on your computer from an iPhone (app: SuFIND/pi_local_remote_ios).",
   "license": "MIT",
-  "author": "Tornike Gomareli",
+  "author": "SuFIND",
+  "contributors": [
+    "Tornike Gomareli (original pi-remote-ios)"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tornikegomareli/pi-remote-ios.git"
+    "url": "git+https://github.com/SuFIND/pi_local_remote_hub.git"
   },
-  "homepage": "https://github.com/tornikegomareli/pi-remote-ios#readme",
+  "homepage": "https://github.com/SuFIND/pi_local_remote_hub#readme",
   "bugs": {
-    "url": "https://github.com/tornikegomareli/pi-remote-ios/issues"
+    "url": "https://github.com/SuFIND/pi_local_remote_hub/issues"
   },
   "keywords": [
     "pi-package",
     "pi",
     "ios",
-    "swiftui",
+    "macos",
     "remote-control",
     "websocket",
     "coding-agent"
@@ -48,7 +51,7 @@
     "extensions": [
       "./extension/index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/tornikegomareli/pi-remote-ios/main/docs/assets/pi-remote-hero.webp"
+    "image": "https://raw.githubusercontent.com/SuFIND/pi_local_remote_hub/main/docs/assets/pi-remote-hero.webp"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

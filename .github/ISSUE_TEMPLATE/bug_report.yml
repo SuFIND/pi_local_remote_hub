@@ -8,10 +8,11 @@ body:
     attributes:
       label: Area
       options:
-        - iOS app
+        - Pi Remote Hub
+        - Pi Hub menu bar app
         - Pi extension
         - Pairing or authentication
-        - Tunnel or networking
+        - Networking or Bonjour
         - WebSocket protocol
     validations:
       required: true
@@ -19,7 +20,7 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: Include the app commit, Pi version, iOS version, and macOS version.
+      description: Include the hub version or commit, Pi version, Node version, macOS version, and the iOS app version.
     validations:
       required: true
   - type: textarea

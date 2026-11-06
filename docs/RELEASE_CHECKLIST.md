@@ -2,15 +2,14 @@
 
 ## Repository
 
-- [x] Rename the repository to `pi-remote-ios`.
-- [x] Add a public description and repository topics.
-- [x] Add the MIT license.
+- [x] Split pi-remote-ios into `pi_local_remote_hub` (this repository) and `pi_local_remote_ios`, keeping the original author's commits.
+- [x] Add the MIT license, keeping the original copyright notice.
 - [x] Add contribution, privacy, and vulnerability-reporting guides.
-- [x] Add extension and iOS test checks in GitHub Actions.
-- [x] Remove local work records and the obsolete pre-Tuist project.
-- [x] Scan current source and all Git refs with Gitleaks.
-- [x] Remove the personal Apple development team from the Xcode project.
-- [x] Scan the full Git history with Gitleaks.
+- [x] Add extension, hub and Pi Hub test checks in GitHub Actions.
+- [x] Remove personal Apple teams, bundle identifiers, hostnames, addresses and work email from the source and the history.
+- [ ] Add a public description and repository topics.
+- [ ] Confirm the first CI run passes.
+- [ ] Enable GitHub private vulnerability reporting.
 
 ## Branding
 
@@ -18,7 +17,7 @@
 - [x] Confirm the logo asset can be included under MIT with its notice.
 - [x] Preserve the Pi website copyright and license notice.
 - [x] Add a clear non-affiliation statement.
-- [x] Choose an original Pi Remote app icon instead of using the official Pi logo as the product mark.
+- [x] Use the original Pi Remote app icon (not the official Pi logo) for Pi Hub.
 
 The website license grants copyright permission for its source and assets. The
 press kit also publishes the logo for download and editorial placement. No
@@ -30,38 +29,22 @@ product's primary mark. The press-kit contact is `rfc@earendil.com`.
 - [x] Add Pi package metadata and an npm file whitelist.
 - [x] Update `ws` to a release without known production advisories.
 - [x] Verify the production dependency audit is clean.
-- [x] Verify the package contains only the extension, protocol/security docs, and license files.
-- [x] Add direct installation from the GitHub repository.
+- [x] Verify the package contains only the extension, hub, protocol/security docs, and license files.
 - [x] Verify the package tarball contents with `npm pack --dry-run --ignore-scripts`.
-- [ ] Test `pi install git:github.com/tornikegomareli/pi-remote-ios` after publication.
+- [ ] Test `pi install git:github.com/SuFIND/pi_local_remote_hub@v0.1.0` from a clean environment.
 
-npm publication is not required for the source preview. Before a later npm release:
+npm publication is not required for the source release. Before a later npm release:
 
 - [ ] Update Pi after its npm package stops pinning vulnerable `brace-expansion@5.0.7`; this affects development installs only.
-- [ ] Authenticate to npm and reserve `pi-remote-ios`.
+- [ ] Authenticate to npm and reserve `pi-local-remote-hub`.
 - [ ] Publish with two-factor authentication and provenance.
-- [ ] Test `pi install npm:pi-remote-ios@<version>` from a clean environment.
+- [ ] Test `pi install npm:pi-local-remote-hub@<version>` from a clean environment.
 
-## iOS app
+## Hub and Pi Hub
 
-- [x] Build the app for a generic iOS Simulator destination.
-- [x] Set the display name to `Pi Remote`.
-- [x] Repair the `PiTests` target and add pairing/reconnect policy coverage.
-- [x] Create original light, dark, and tinted Pi Remote app icons.
-- [x] Keep iOS distribution source-only; no App Store release is planned.
-- [x] Preserve third-party notices in the source distribution.
-- [x] Generate the iOS app and test targets from pinned Tuist manifests.
-- [x] Run 44 unit tests on an iOS Simulator.
-- [x] Run live E2E for manual pairing, QR deep link, prompt completion, background return, token reconnect, and network interruption.
-- [x] Build, install, and launch the signed app on a physical iPhone.
-- [x] Run Linux extension pairing and token reconnect through Docker.
-
-## First public preview
-
-- [x] Confirm the README installation form against established Pi extensions.
-- [ ] Make the repository public.
-- [ ] Test a clean GitHub installation.
-- [ ] Confirm the first public CI run passes.
-- [ ] Enable GitHub private vulnerability reporting.
-- [ ] Tag `v0.1.0` only after public CI and installation pass.
-- [ ] Publish release notes with supported Pi, iOS, Xcode, Tuist, and Node versions.
+- [x] Run the Node suite, including hub integration over pinned `wss://`.
+- [x] Run the Pi Hub core tests and render the menu and settings snapshots.
+- [x] Pair, browse, open and prompt from a physical iPhone against the hub.
+- [ ] Port `scripts/verify-linux-e2e.mjs` to the hub.
+- [ ] Verify QR pairing, IP-change reconnect and revoke on a physical iPhone.
+- [ ] Publish release notes with supported Pi, macOS and Node versions.
