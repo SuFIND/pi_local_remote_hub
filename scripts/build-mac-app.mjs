@@ -51,7 +51,7 @@ writeFileSync(
 		CFBundleShortVersionString: version.replace(/-.*/, ""),
 		CFBundleVersion: build,
 		...(hasIcon ? { CFBundleIconFile: "AppIcon" } : {}),
-		LSMinimumSystemVersion: "14.0",
+		LSMinimumSystemVersion: "26.0",
 		LSUIElement: true,
 		NSHumanReadableCopyright: "Pi Remote Hub menu bar app",
 		PiHubNodePath: process.execPath,

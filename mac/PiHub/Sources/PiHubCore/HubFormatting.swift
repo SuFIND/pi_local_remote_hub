@@ -10,6 +10,14 @@ public enum HubFormatting {
     return path.hasPrefix(prefix) ? "~/" + path.dropFirst(prefix.count) : path
   }
 
+  /// `wss://192.168.1.5:3769/v1/ws#fp=…` → `192.168.1.5:3769`; the address
+  /// without the parts everyone shares.
+  public static func hostAndPort(of url: String) -> String {
+    guard let components = URLComponents(string: url), let host = components.host, !host.isEmpty else { return url }
+    let shown = host.contains(":") ? "[\(host)]" : host
+    return components.port.map { "\(shown):\($0)" } ?? shown
+  }
+
   /// The session's name, else its folder's name.
   public static func title(of agent: AgentSummary) -> String {
     if let name = agent.sessionName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }

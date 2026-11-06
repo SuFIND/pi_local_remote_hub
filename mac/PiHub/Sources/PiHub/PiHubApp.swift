@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // Not from inside this main-queue block: .terminateLater waits in a nested
       // run loop that cannot drain the main queue (where stopHub runs) until
       // this block returns, so terminating here would deadlock.
-      RunLoop.main.perform { NSApp.terminate(nil) }
+      RunLoop.main.perform { MainActor.assumeIsolated { NSApp.terminate(nil) } }
     }
     source.resume()
     terminationSignal = source

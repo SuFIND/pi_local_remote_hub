@@ -49,6 +49,9 @@ struct HubOverviewTests {
     #expect(HubFormatting.abbreviate("/Users/me/code/app", home: "/Users/me") == "~/code/app")
     #expect(HubFormatting.abbreviate("/Users/meow", home: "/Users/me") == "/Users/meow")
     #expect(HubFormatting.abbreviate("/Users/me", home: "/Users/me") == "~")
+    #expect(HubFormatting.hostAndPort(of: "wss://192.168.1.20:3769/v1/ws#fp=abc") == "192.168.1.20:3769")
+    #expect(HubFormatting.hostAndPort(of: "wss://mac.local/v1/ws") == "mac.local")
+    #expect(HubFormatting.hostAndPort(of: "not a url") == "not a url")
   }
 
   @Test("Relative times, pairing countdown and minutes")

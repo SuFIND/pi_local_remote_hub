@@ -6,6 +6,11 @@ import SwiftUI
 /// Debug builds only: `PI_HUB_SNAPSHOT=/tmp/menu.png swift run PiHub` renders
 /// the menu with sample data (light and dark, plus the pairing panel) to PNG
 /// files and quits. For checking layout without clicking the menu bar.
+/// Borderless, but key, so prominent buttons render active like the open menu.
+private final class KeyWindow: NSWindow {
+  override var canBecomeKey: Bool { true }
+}
+
 @MainActor
 enum MenuSnapshot {
   static func write(to path: String) {
@@ -22,28 +27,61 @@ enum MenuSnapshot {
       let dark = appearance == .darkAqua
       let hosting = NSHostingView(rootView: MenuView(model: model)
         .background(Color(nsColor: .windowBackgroundColor))
-        .environment(\.colorScheme, dark ? .dark : .light))
+        .environment(\.colorScheme, dark ? .dark : .light)
+        .environment(\.appearsActive, true))
       hosting.appearance = NSAppearance(named: appearance)
-      let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 380, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
+      let window = KeyWindow(contentRect: CGRect(x: 0, y: 0, width: 380, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
       window.contentView = hosting
       window.appearance = NSAppearance(named: appearance)
       window.backgroundColor = appearance == .darkAqua ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.96, alpha: 1)
       windows.append(window)
+      window.setFrameOrigin(NSPoint(x: 40 + CGFloat(windows.count) * 400, y: 80))
+      window.orderFrontRegardless()
+      window.makeKey()
     }
-    // Let onGeometryChange size the scroll area, then capture.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-      for (index, window) in windows.enumerated() {
-        guard let hosting = window.contentView else { continue }
-        let size = hosting.fittingSize
-        window.setContentSize(size)
-        hosting.frame = CGRect(origin: .zero, size: size)
-        hosting.layoutSubtreeIfNeeded()
-        guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { continue }
-        hosting.cacheDisplay(in: hosting.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: shots[index].0))
-      }
+    NSApp.activate()
+    // Let onGeometryChange size the scroll area, then capture one window
+    // at a time, each as the key window so prominent buttons look active.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+      capture(windows, paths: shots.map(\.0), index: 0)
+    }
+  }
+
+  private static func capture(_ windows: [NSWindow], paths: [String], index: Int) {
+    guard index < windows.count else {
       NSApp.terminate(nil)
+      return
     }
+    let window = windows[index]
+    if let hosting = window.contentView {
+      let size = hosting.fittingSize
+      window.setContentSize(size)
+      hosting.frame = CGRect(origin: .zero, size: size)
+      hosting.layoutSubtreeIfNeeded()
+    }
+    window.makeKeyAndOrderFront(nil)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+      let url = URL(fileURLWithPath: paths[index])
+      // Liquid Glass is composited by the window server, so prefer a
+      // window-server capture of our own window; cacheDisplay misses it.
+      if let image = windowImage(window), let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+        try? png.write(to: url)
+      } else if let hosting = window.contentView, let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
+        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
+      }
+      capture(windows, paths: paths, index: index + 1)
+    }
+  }
+
+  /// `CGWindowListCreateImage` is unavailable in the current SDK but still
+  /// exported; capturing our own window needs no screen-recording grant.
+  private static func windowImage(_ window: NSWindow) -> CGImage? {
+    typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+    guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
+    let capture = unsafeBitCast(symbol, to: Capture.self)
+    // .null rect, .optionIncludingWindow (8), .boundsIgnoreFraming (1) | .bestResolution (8)
+    return capture(.null, 8, UInt32(window.windowNumber), 1 | 8)?.takeRetainedValue()
   }
 
   static let samplePairingJSON = """
