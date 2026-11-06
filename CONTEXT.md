@@ -12,7 +12,7 @@ The one resident process per Mac that owns the LAN listener, pairing and trusted
 
 ### Pi Hub (menu bar app)
 
-The macOS menu bar app (`mac/PiHub`) that runs the hub as its child process, restarts it when it exits, and shows its running Pi sessions, connected and paired iPhones and shared folders. Quitting it stops the hub it started; a hub started elsewhere is only observed.
+The macOS menu bar app (`mac/PiHub`) that runs the hub as its child process, restarts it when it exits, and shows its running Pi sessions, connected and paired iPhones and shared folders: counts in the menu bar panel, the details in its settings window. Quitting it stops the hub it started; a hub started elsewhere is only observed.
 
 ### Shared folders (roots)
 

@@ -4,8 +4,8 @@ import PiHubCore
 import SwiftUI
 
 /// Debug builds only: `PI_HUB_SNAPSHOT=/tmp/menu.png swift run PiHub` renders
-/// the menu with sample data (light and dark, plus the pairing panel) to PNG
-/// files and quits. For checking layout without clicking the menu bar.
+/// the menu (light, dark, pairing), the menu bar icons and each settings
+/// pane with sample data to PNG files next to that path, and quits. For checking layout without clicking the menu bar.
 /// Borderless, but key, so prominent buttons render active like the open menu.
 private final class KeyWindow: NSWindow {
   override var canBecomeKey: Bool { true }
@@ -13,47 +13,91 @@ private final class KeyWindow: NSWindow {
 
 @MainActor
 enum MenuSnapshot {
+  private struct Shot {
+    let path: String
+    let view: AnyView
+    /// nil: the view's own fitting size.
+    let size: CGSize?
+    let dark: Bool
+  }
+
   static func write(to path: String) {
     let overview = try! JSONDecoder().decode(HubOverview.self, from: Data(sampleJSON.utf8))
     let pairing = try! JSONDecoder().decode(HubStatus.self, from: Data(samplePairingJSON.utf8))
     let base = (path as NSString).deletingPathExtension
-    let shots: [(String, HubModel, NSAppearance.Name)] = [
-      ("\(base)-light.png", HubModel(preview: overview), .aqua),
-      ("\(base)-dark.png", HubModel(preview: overview), .darkAqua),
-      ("\(base)-pairing.png", HubModel(preview: overview, pairing: pairing), .darkAqua),
+    func menu(_ model: HubModel) -> AnyView { AnyView(MenuView(model: model)) }
+    func settings(_ pane: SettingsPane, pairing: HubStatus? = nil) -> AnyView {
+      AnyView(SettingsView(model: HubModel(preview: overview, pairing: pairing, pane: pane), managesActivation: false))
+    }
+    let settingsSize = CGSize(width: 760, height: 540)
+    var shots: [Shot] = [
+      Shot(path: "\(base)-light.png", view: menu(HubModel(preview: overview)), size: nil, dark: false),
+      Shot(path: "\(base)-dark.png", view: menu(HubModel(preview: overview)), size: nil, dark: true),
+      Shot(path: "\(base)-pairing.png", view: menu(HubModel(preview: overview, pairing: pairing)), size: nil, dark: true),
+      Shot(path: "\(base)-icons-light.png", view: AnyView(IconStrip()), size: nil, dark: false),
+      Shot(path: "\(base)-icons-dark.png", view: AnyView(IconStrip()), size: nil, dark: true),
     ]
+    for pane in SettingsPane.allCases {
+      shots.append(Shot(path: "\(base)-settings-\(pane.rawValue).png", view: settings(pane), size: settingsSize, dark: false))
+    }
+    shots.append(Shot(path: "\(base)-settings-general-dark.png", view: settings(.general), size: settingsSize, dark: true))
+    shots.append(Shot(path: "\(base)-settings-pairing.png", view: settings(.iphones, pairing: pairing), size: settingsSize, dark: false))
+
     var windows: [NSWindow] = []
-    for (_, model, appearance) in shots {
-      let dark = appearance == .darkAqua
-      let hosting = NSHostingView(rootView: MenuView(model: model)
+    for shot in shots {
+      let appearance = NSAppearance(named: shot.dark ? .darkAqua : .aqua)
+      let hosting = NSHostingView(rootView: shot.view
         .background(Color(nsColor: .windowBackgroundColor))
-        .environment(\.colorScheme, dark ? .dark : .light)
+        .environment(\.colorScheme, shot.dark ? .dark : .light)
         .environment(\.appearsActive, true))
-      hosting.appearance = NSAppearance(named: appearance)
-      let window = KeyWindow(contentRect: CGRect(x: 0, y: 0, width: 380, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
+      hosting.appearance = appearance
+      let size = shot.size ?? CGSize(width: 380, height: 800)
+      let window = KeyWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
       window.contentView = hosting
-      window.appearance = NSAppearance(named: appearance)
-      window.backgroundColor = appearance == .darkAqua ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.96, alpha: 1)
+      window.appearance = appearance
+      window.backgroundColor = shot.dark ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.96, alpha: 1)
       windows.append(window)
-      window.setFrameOrigin(NSPoint(x: 40 + CGFloat(windows.count) * 400, y: 80))
+      window.setFrameOrigin(NSPoint(x: 40 + CGFloat(windows.count % 3) * 60, y: 80))
       window.orderFrontRegardless()
-      window.makeKey()
     }
     NSApp.activate()
     // Let onGeometryChange size the scroll area, then capture one window
     // at a time, each as the key window so prominent buttons look active.
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-      capture(windows, paths: shots.map(\.0), index: 0)
+      capture(windows, paths: shots.map(\.path), fitting: shots.map { $0.size == nil }, index: 0)
     }
   }
 
-  private static func capture(_ windows: [NSWindow], paths: [String], index: Int) {
+  /// Each menu bar state, large, on a menu-bar-like strip.
+  private struct IconStrip: View {
+    var body: some View {
+      HStack(spacing: 18) {
+        ForEach(MenuBarIcon.State.allCases, id: \.self) { state in
+          VStack(spacing: 6) {
+            HStack(spacing: 10) {
+              // Actual size and 4x, as the template renders in the menu bar.
+              Image(nsImage: MenuBarIcon.image(state)).renderingMode(.template)
+              Image(nsImage: MenuBarIcon.image(state)).renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 72, height: 72)
+            }
+            Text(String(describing: state)).font(.caption)
+          }
+        }
+      }
+      .foregroundStyle(.primary)
+      .padding(16)
+    }
+  }
+
+  private static func capture(_ windows: [NSWindow], paths: [String], fitting: [Bool], index: Int) {
     guard index < windows.count else {
       NSApp.terminate(nil)
       return
     }
     let window = windows[index]
-    if let hosting = window.contentView {
+    if fitting[index], let hosting = window.contentView {
       let size = hosting.fittingSize
       window.setContentSize(size)
       hosting.frame = CGRect(origin: .zero, size: size)
@@ -70,7 +114,7 @@ enum MenuSnapshot {
         hosting.cacheDisplay(in: hosting.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
       }
-      capture(windows, paths: paths, index: index + 1)
+      capture(windows, paths: paths, fitting: fitting, index: index + 1)
     }
   }
 
@@ -103,10 +147,12 @@ enum MenuSnapshot {
       "lastActivityAt":"\(ISO8601DateFormatter().string(from: Date().addingTimeInterval(-150)))","viewers":[]},
      {"agentId":"a3","pid":102,"mode":"tui","origin":"terminal","cwd":"/private/tmp/scratch","busy":false,"shared":false,
       "connectedAt":"2026-11-06T05:39:10.000Z","lastActivityAt":"\(ISO8601DateFormatter().string(from: Date().addingTimeInterval(-4000)))","viewers":[]}],
-   "phones":[{"connectionId":"c1","deviceId":"d1","deviceName":"Kai's iPhone","remoteAddress":"192.168.1.21",
+   "phones":[{"connectionId":"c1","deviceId":"Ab3dE5gH7jK9mN1p","deviceName":"Kai's iPhone","remoteAddress":"192.168.1.21",
      "connectedAt":"\(ISO8601DateFormatter().string(from: Date().addingTimeInterval(-600)))","agentId":"a1"}],
    "devices":[{"id":"Ab3dE5gH7jK9mN1p","name":"Kai's iPhone","createdAt":"2026-11-01T00:00:00.000Z",
-     "lastSeenAt":"\(ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30)))"}]}
+     "lastSeenAt":"\(ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30)))"},
+     {"id":"Q2b9xLmT0aPz7KcE","name":"iPhone 15","createdAt":"2026-10-20T00:00:00.000Z",
+     "lastSeenAt":"\(ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3 * 86_400)))"}]}
   """
 }
 #endif

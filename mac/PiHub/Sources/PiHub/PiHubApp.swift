@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 /// Pi Hub: a menu bar app (no Dock icon) that keeps the Pi Remote Hub
-/// running and shows what it serves.
+/// running. The menu bar "P" opens a short status panel; Settings… opens
+/// the full window (shared folders, iPhones, Pi sessions, startup).
 @main
 struct PiHubApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -14,15 +15,37 @@ struct PiHubApp: App {
       MenuBarLabel(model: delegate.model)
     }
     .menuBarExtraStyle(.window)
+
+    Window("Pi Hub Settings", id: SettingsView.windowID) {
+      SettingsView(model: delegate.model)
+    }
+    .defaultSize(width: 760, height: 540)
+    .defaultLaunchBehavior(.suppressed)
+    .restorationBehavior(.disabled)
+    .commandsRemoved()
   }
 }
 
 private struct MenuBarLabel: View {
   let model: HubModel
+  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    Image(systemName: model.menuBarSymbol)
-      .accessibilityLabel("Pi Hub")
+    Image(nsImage: MenuBarIcon.image(model.menuBarState))
+      .accessibilityLabel(accessibilityText)
+      .onAppear {
+        // The label lives as long as the app, so its openWindow outlives any panel.
+        model.openSettingsWindow = { [openWindow] in openWindow(id: SettingsView.windowID) }
+      }
+  }
+
+  private var accessibilityText: String {
+    switch model.menuBarState {
+    case .idle: "Pi Hub"
+    case .inUse: "Pi Hub, iPhone connected"
+    case .starting: "Pi Hub, starting"
+    case .problem: "Pi Hub, not running"
+    }
   }
 }
 
@@ -60,6 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     source.resume()
     terminationSignal = source
     model.start()
+  }
+
+  /// Opening Pi Hub again (Finder, Spotlight, `open -a`) shows its settings.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    model.showSettings()
+    return false
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

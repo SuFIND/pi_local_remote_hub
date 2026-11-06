@@ -42,6 +42,8 @@ Pi Remote connects an iOS device to one active Pi terminal session on the same t
 ## Pi Hub menu bar app (macOS)
 
 - Runs the hub in the background as a menu bar app without a Dock icon, and restarts it if it exits; quitting the app stops it. Optional Open at Login.
+- Shows a "P" in the menu bar that marks a connected iPhone and a hub that is starting or down.
+- Clicking it shows how many iPhones are paired and in use (connected now), what each connected one is viewing, and Pair iPhone; the rest is in a settings window (General, Shared Folders, iPhones, Pi Sessions), also opened by launching the app again.
 - Shows the hub's address, certificate fingerprint and Bonjour state.
 - Lists every running Pi: session name, folder, terminal or hub-started, working or idle, model, which iPhone is viewing it, and whether it is inside a shared folder.
 - Stops a hub-started Pi on request (terminal windows are never stopped).

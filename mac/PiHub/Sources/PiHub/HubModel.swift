@@ -4,7 +4,7 @@ import Observation
 import PiHubCore
 import ServiceManagement
 
-/// State and actions behind the menu: polls the hub's `overview` every two
+/// State and actions behind the menu and the settings window: polls the hub's `overview` every two
 /// seconds, keeps the hub running through `HubSupervisor`, and sends the
 /// control requests the menu offers.
 @MainActor
@@ -27,12 +27,17 @@ final class HubModel {
   /// Set when a phone paired while the pairing panel was open.
   private(set) var justPaired: String?
   private(set) var loginItemStatus: SMAppService.Status = SMAppService.mainApp.status
+  /// The settings window's pane; the menu opens it on the pane it links to.
+  var settingsPane: SettingsPane? = .general
 
   let launch: HubLaunchConfig
   @ObservationIgnored private let client: HubControlClient
   @ObservationIgnored private let supervisor: HubSupervisor
   @ObservationIgnored private var pollTask: Task<Void, Never>?
   @ObservationIgnored private var devicesWhenPairing: Set<String> = []
+  /// SwiftUI's `openWindow`, handed over by the menu bar label so AppKit
+  /// callbacks (reopening the app) can show the settings window too.
+  @ObservationIgnored var openSettingsWindow: (() -> Void)?
 
   init(launch: HubLaunchConfig = HubModel.resolveLaunch()) {
     self.launch = launch
@@ -44,10 +49,11 @@ final class HubModel {
   }
 
   /// Fixed data for previews and screenshots; never starts or polls a hub.
-  convenience init(preview overview: HubOverview, pairing: HubStatus? = nil) {
+  convenience init(preview overview: HubOverview, pairing: HubStatus? = nil, pane: SettingsPane = .general) {
     self.init(launch: HubLaunchConfig(nodePath: "", scriptPath: "", searchPath: "", stateDirectory: NSTemporaryDirectory()))
     self.overview = overview
     self.pairing = pairing
+    settingsPane = pane
     connection = .running
   }
 
@@ -106,12 +112,12 @@ final class HubModel {
 
   // MARK: - Menu bar
 
-  var menuBarSymbol: String {
+  var menuBarState: MenuBarIcon.State {
     guard connection == .running, let overview else {
-      return connection == .starting ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash"
+      return connection == .starting ? .starting : .problem
     }
-    if !overview.status.running { return "exclamationmark.triangle" }
-    return overview.phones.isEmpty ? "antenna.radiowaves.left.and.right" : "iphone.radiowaves.left.and.right"
+    if !overview.status.running { return .problem }
+    return overview.phones.isEmpty ? .idle : .inUse
   }
 
   // MARK: - Actions
@@ -122,6 +128,13 @@ final class HubModel {
     await perform {
       self.pairing = try await self.client.request("pair", as: HubStatus.self)
     }
+  }
+
+  /// Shows the settings window, on `pane` if given, in front.
+  func showSettings(_ pane: SettingsPane? = nil) {
+    if let pane { settingsPane = pane }
+    openSettingsWindow?()
+    NSApp.activate()
   }
 
   func closePairing() {

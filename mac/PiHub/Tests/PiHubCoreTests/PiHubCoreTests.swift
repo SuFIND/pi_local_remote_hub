@@ -54,6 +54,27 @@ struct HubOverviewTests {
     #expect(HubFormatting.hostAndPort(of: "not a url") == "not a url")
   }
 
+  @Test("An iPhone in use counts once, by its newest connection")
+  func phonesInUse() throws {
+    let overview = try JSONDecoder().decode(HubOverview.self, from: Data(Self.json.utf8))
+    var reconnect = overview.phones[0]
+    reconnect.connectionId = "c2"
+    reconnect.connectedAt = "2026-11-06T01:58:00Z"
+    reconnect.agentId = nil
+    var other = overview.phones[0]
+    other.connectionId = "c3"
+    other.deviceId = "d2"
+    other.connectedAt = "2026-11-06T01:53:00.000Z"
+    let inUse = HubFormatting.phonesInUse([overview.phones[0], other, reconnect])
+    #expect(inUse.map(\.connectionId) == ["c2", "c3"])
+    #expect(HubFormatting.connection(of: overview.devices[0], in: [overview.phones[0], reconnect])?.connectionId == "c2")
+    #expect(HubFormatting.connection(of: overview.devices[0], in: [other]) == nil)
+    #expect(HubFormatting.phonesInUse([]).isEmpty)
+    #expect(HubFormatting.isInside("/Users/me/code/app", root: "/Users/me/code"))
+    #expect(HubFormatting.isInside("/Users/me/code", root: "/Users/me/code/"))
+    #expect(!HubFormatting.isInside("/Users/me/codebase", root: "/Users/me/code"))
+  }
+
   @Test("Relative times, pairing countdown and minutes")
   func times() throws {
     let now = try #require(HubFormatting.date("2026-11-06T02:00:00.000Z"))

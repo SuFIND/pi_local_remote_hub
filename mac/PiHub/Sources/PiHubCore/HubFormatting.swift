@@ -37,6 +37,26 @@ public enum HubFormatting {
     return "Browsing sessions"
   }
 
+  /// The iPhones in use: one entry per device (a phone that reconnects can
+  /// briefly hold two connections), its newest connection, newest first.
+  public static func phonesInUse(_ phones: [PhoneSummary]) -> [PhoneSummary] {
+    var seen = Set<String>()
+    return phones
+      .sorted { (date($0.connectedAt) ?? .distantPast) > (date($1.connectedAt) ?? .distantPast) }
+      .filter { seen.insert($0.deviceId).inserted }
+  }
+
+  /// Whether `path` is `root` or inside it (whole path components only).
+  public static func isInside(_ path: String, root: String) -> Bool {
+    let root = root.count > 1 && root.hasSuffix("/") ? String(root.dropLast()) : root
+    return path == root || path.hasPrefix(root == "/" ? "/" : root + "/")
+  }
+
+  /// The paired iPhone's newest connection, if it is connected now.
+  public static func connection(of device: TrustedDevice, in phones: [PhoneSummary]) -> PhoneSummary? {
+    phonesInUse(phones).first { $0.deviceId == device.id }
+  }
+
   public static func date(_ iso: String) -> Date? {
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
