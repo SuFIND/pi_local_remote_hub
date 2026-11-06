@@ -178,6 +178,8 @@ node hub/bin.mjs pair                  # 2-minute pairing code + QR
 `uninstall` removes the login item. The configuration lives in
 `~/.pi/agent/pi-remote/hub.json` (`roots`, `idleExitMinutes` = 3, `port` = 3769,
 `piCommand`, extra `piArgs` for hub-started Pi); the hub reloads it on change.
+Sessions are read from Pi's session folder (`~/.pi/agent/sessions`, or
+`PI_CODING_AGENT_SESSION_DIR` when set for the hub).
 Logs go to `~/.pi/agent/pi-remote/hub.log`.
 
 Pi windows find the hub on their own; start the hub before or after them.
@@ -273,19 +275,15 @@ question recovery, run evidence, diff payloads, the session index, and hub
 integration (phones over pinned `wss://`, Pi processes over the hub socket,
 background start, idle exit, session switches, and terminal handoff).
 
-Run the full iOS E2E test against a real Pi process and configured model:
+Run the full iOS E2E test against a real hub, the Pi it starts, and a configured model:
 
 ```bash
 scripts/run-e2e.mjs
 ```
 
-If several matching Simulators exist, set `PI_E2E_SIMULATOR_ID`. Set `PI_E2E_MODEL` to use another configured model, and `PI_E2E_EXTENSIONS` (comma-separated paths) when that model's provider is registered by an extension. The run uses a throwaway `PI_REMOTE_STATE_DIR`, so it never touches your paired devices.
+It pairs, opens the shared folder, starts a session, prompts, and checks background return, cold-launch resume, and reconnect after a hub restart. If several matching Simulators exist, set `PI_E2E_SIMULATOR_ID`. Set `PI_E2E_MODEL` to use another configured model, and `PI_E2E_EXTENSIONS` (comma-separated paths) when that model's provider is registered by an extension. The run uses a throwaway `PI_REMOTE_STATE_DIR`, `PI_CODING_AGENT_SESSION_DIR` and shared folder, so it never touches your paired devices or sessions.
 
-Run Linux extension acceptance through Docker:
-
-```bash
-scripts/verify-linux-e2e.mjs
-```
+`scripts/verify-linux-e2e.mjs` (Linux acceptance through Docker) still drives the removed `/remote start` and needs porting to the hub.
 
 Use `examples/edit-diff-playground.ts` to exercise edit and write diff rendering
 from a connected phone without modifying application source.

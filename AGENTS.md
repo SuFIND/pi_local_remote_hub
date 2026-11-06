@@ -262,7 +262,7 @@ Packages are pinned exactly: `ComposableArchitecture` 1.26.1 (first Xcode 27-com
 
 The `PiTests` target uses Swift Testing. Run it with `xcodebuild -project Pi/Pi.xcodeproj -scheme Pi -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skipMacroValidation test`.
 
-The `PiUITests` target uses XCTest UI automation under the `PiE2E` scheme. `scripts/run-e2e.mjs` starts a real Pi RPC process. It checks pairing, prompts, completion, background return, cold launch, and reconnect. It resets the selected Simulator keychain, removes stale `com.techzy.Pi` installs, and isolates trust state in a temporary `PI_REMOTE_STATE_DIR`. Use `PI_E2E_EXTENSIONS` for provider-auth extensions and `PI_E2E_TUIST=1` to build through Tuist. `scripts/verify-linux-e2e.mjs` checks the extension in `node:22-bookworm` through Docker.
+The `PiUITests` target uses XCTest UI automation under the `PiE2E` scheme. `scripts/run-e2e.mjs` starts a real hub that starts Pi for the phone. It checks pairing, the session browser, a new session, prompts, completion, background return, cold-launch resume, and reconnect after a hub restart. It resets the selected Simulator keychain, removes stale `com.techzy.Pi` installs, and isolates hub state, Pi sessions and the shared folder in temporary dirs (`PI_REMOTE_STATE_DIR`, `PI_CODING_AGENT_SESSION_DIR`). Use `PI_E2E_EXTENSIONS` for provider-auth extensions and `PI_E2E_TUIST=1` to build through Tuist. `scripts/verify-linux-e2e.mjs` (Docker) still targets the removed `/remote start` and needs porting.
 
 ## Conventions
 

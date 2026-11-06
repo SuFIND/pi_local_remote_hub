@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { parseSessionEntries, SessionManager, type FileEntry } from "@earendil-works/pi-coding-agent";
 import { sanitizeForRemote } from "../extension/pi/sanitizer.js";
 import type { RemoteSessionHistory } from "../extension/pi/PiRemoteAdapter.js";
-import { canonicalPath, isInsideRoots } from "./HubConfig.js";
+import { canonicalPath, expandHome, isInsideRoots } from "./HubConfig.js";
 import { SessionIndex, type IndexedSession } from "./SessionIndex.js";
 
 export type SessionStatus = "terminal" | "background" | "stopped";
@@ -38,11 +38,20 @@ export type SessionSummary = {
 };
 
 export type CatalogOptions = {
-	/** Pi's session directory; defaults to Pi's own default. */
+	/**
+	 * Pi's session directory. Defaults like Pi: `PI_CODING_AGENT_SESSION_DIR`
+	 * (one flat folder), else one folder per cwd under `~/.pi/agent/sessions`.
+	 */
 	sessionDir?: string;
 	cacheMs?: number;
 	list?: () => Promise<IndexedSession[]>;
 };
+
+/** Pi's `PI_CODING_AGENT_SESSION_DIR`; the hub and the Pi it starts share it. */
+function envSessionDir(): string | undefined {
+	const value = process.env.PI_CODING_AGENT_SESSION_DIR?.trim();
+	return value ? expandHome(value) : undefined;
+}
 
 const IGNORED_FOLDERS = new Set(["node_modules", "Library", "Applications"]);
 const FIRST_MESSAGE_CHARS = 240;
@@ -59,7 +68,7 @@ export class SessionCatalog {
 
 	constructor(options: CatalogOptions = {}) {
 		this.cacheMs = options.cacheMs ?? 1_000;
-		const index = new SessionIndex({ sessionDir: options.sessionDir });
+		const index = new SessionIndex({ sessionDir: options.sessionDir ?? envSessionDir() });
 		this.list = options.list ?? (() => index.list());
 	}
 

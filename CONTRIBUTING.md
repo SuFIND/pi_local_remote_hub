@@ -60,11 +60,8 @@ Before a release, run live iOS acceptance with a configured Pi model:
 scripts/run-e2e.mjs
 ```
 
-Run Linux extension acceptance with Docker:
-
-```bash
-scripts/verify-linux-e2e.mjs
-```
+`scripts/verify-linux-e2e.mjs` (Linux acceptance with Docker) still drives the
+removed `/remote start` and needs porting to the hub.
 
 ## Change rules
 
